@@ -36,105 +36,229 @@ print("YOUR CODE HERE...")
 
 # COMMAND ----------
 
-# MAGIC %python
-# MAGIC import holidays
-
-# COMMAND ----------
-
-print(holidays.USA())
-
-# COMMAND ----------
-
-display(dbutils.fs.ls(BIKE_TRIP_DATA_PATH))
-
-# COMMAND ----------
-
-trip_files = dbutils.fs.ls(BIKE_TRIP_DATA_PATH)
-for file in trip_files:
-  print(file.path)
-
-# COMMAND ----------
-
-trip_files[0]
-
-# COMMAND ----------
-
-temp_trip_df = spark.read.csv(trip_files[0].path, header=True, inferSchema=True)
-
-# COMMAND ----------
-
-print(temp_trip_df.head(5))
-
-# COMMAND ----------
-
-# Read CSV files as DataFrames
-# dfs = []
-# for file in trip_files:
-#     if file.name.endswith(".csv"):
-#         df = spark.read.csv(file.path, header=True, inferSchema=True)
-#         dfs.append(df)
-
-# COMMAND ----------
-
-# merging DataFrames with Spark
-# trip_df = dfs[0]
-# for i in range(1, len(dfs)):
-#     trip_df = trip_df.union(dfs[i])
-
-# COMMAND ----------
-
-trip_df=spark.read.format('csv').option("header","True").option("inferSchema","True").load(BIKE_TRIP_DATA_PATH+'202111_citibike_tripdata.csv')
-display(trip_df)
-
-# COMMAND ----------
-
-type(trip_df)
-
-# COMMAND ----------
-
-# creating a table from merged DataFrame with Spark
-trip_df.createOrReplaceTempView("trips")
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC SELECT * FROM trips
-# MAGIC ORDER BY started_at DESC
-# MAGIC LIMIT 5
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC USE G09_db;
-# MAGIC CREATE TABLE IF NOT EXISTS station_trips(
-# MAGIC   SELECT * FROM trips
-# MAGIC   WHERE start_station_name = 'E 33 St & 1 Ave' or end_station_name = 'E 33 St & 1 Ave'
-# MAGIC )
-
-# COMMAND ----------
-
 trip_trend_df = spark.sql("SELECT concat(year,'-',month,'-',day) as date, concat(year,'-',month) as month_year, ride_id FROM(SELECT YEAR(started_at) AS year, MONTH(started_at) AS month, DAY(started_at) AS day, ride_id FROM bronze_historic_bike_trip) ORDER BY date")
-display(trip_trend_df, truncate=False)
 
 # COMMAND ----------
 
 # MAGIC %python
-# MAGIC import matplotlib 
-# MAGIC month_year_df = trip_trend_df.groupBy('month_year').count()
+# MAGIC from datetime import datetime, timedelta
+# MAGIC import pandas as pd
+# MAGIC import matplotlib.pyplot as plt
+# MAGIC import holidays
+# MAGIC import matplotlib.dates as mdates
 
 # COMMAND ----------
 
-
+# MAGIC %python
+# MAGIC # Define the start and end dates as strings in the format "YYYY-MM-DD"
+# MAGIC start_date = trip_trend_df.head(1)[0]['date']
+# MAGIC end_date = trip_trend_df.tail(1)[0]['date']
+# MAGIC 
+# MAGIC # Convert the start and end dates to datetime objects
+# MAGIC start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
+# MAGIC end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
+# MAGIC 
+# MAGIC # Create a timedelta object representing one day
+# MAGIC one_day = timedelta(days=1)
+# MAGIC 
+# MAGIC # Initialize an empty list to store the datetime objects
+# MAGIC date_list = []
+# MAGIC counts = []
+# MAGIC # Loop through the date range and append each date to the list
+# MAGIC current_date = start_date_obj
+# MAGIC while current_date <= end_date_obj:
+# MAGIC     date_list.append([current_date.strftime('%Y-%m-%d'),0])
+# MAGIC     counts.append(0)
+# MAGIC     current_date += one_day
 
 # COMMAND ----------
 
-display(spark.read.format('delta').load(BRONZE_STATION_INFO_PATH))
+# MAGIC %python
+# MAGIC # temp_df = spark.createDataFrame([current_date, counts], ["date", 'trip_count'])
+# MAGIC temp_df = pd.DataFrame(date_list, columns = ["date", 'trip_count'])
 
 # COMMAND ----------
 
-# E 33 St & 1 Ave
-station_info = spark.read.format('delta').load(BRONZE_STATION_INFO_PATH)
-display(station_info.filter(station_info["name"] == "E 33 St & 1 Ave"))
+temp_df = spark.createDataFrame(temp_df)
+temp_df.createOrReplaceTempView("date_table")
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT date_table.date, concat(YEAR(date_table.date),'-',LPAD(MONTH(date_table.date), 2, '0')) as month_year, COALESCE(t2.trip_count, 0) AS trip_count
+# MAGIC FROM date_table
+# MAGIC LEFT JOIN (
+# MAGIC   SELECT date, count(ride_id) as trip_count
+# MAGIC   FROM(
+# MAGIC     SELECT concat(YEAR(started_at),'-',LPAD(MONTH(started_at), 2, '0'),'-',LPAD(DAY(started_at), 2, '0')) as date, ride_id 
+# MAGIC     FROM bronze_historic_bike_trip
+# MAGIC   ) as t1
+# MAGIC   GROUP BY date  
+# MAGIC ) as t2
+# MAGIC on date_table.date = t2.date
+# MAGIC ORDER BY date_table.date
+
+# COMMAND ----------
+
+sql_command = """
+SELECT date_table.date, concat(YEAR(date_table.date),'-',LPAD(MONTH(date_table.date), 2, '0')) as month_year, COALESCE(t2.trip_count, 0) AS trip_count
+FROM date_table
+LEFT JOIN (
+  SELECT date, count(ride_id) as trip_count
+  FROM(
+    SELECT concat(YEAR(started_at),'-',LPAD(MONTH(started_at), 2, '0'),'-',LPAD(DAY(started_at), 2, '0')) as date, ride_id 
+    FROM bronze_historic_bike_trip
+  ) as t1
+  GROUP BY date  
+) as t2
+on date_table.date = t2.date
+ORDER BY date_table.date
+"""
+
+trip_trend_df = spark.sql(sql_command)
+
+# COMMAND ----------
+
+display(trip_trend_df)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC # Trip with US Holidays
+
+# COMMAND ----------
+
+us_holidays = holidays.UnitedStates(years = [2021,2022,2023])
+
+# COMMAND ----------
+
+# MAGIC %python
+# MAGIC # holiday_dates = []
+# MAGIC holidays_lt = []
+# MAGIC for date, name in sorted(us_holidays.items()):
+# MAGIC #     holiday_dates.append(date)
+# MAGIC     holidays_lt.append([date.strftime("%Y-%m-%d"), name])
+
+# COMMAND ----------
+
+holidays_lt[10]
+
+# COMMAND ----------
+
+# MAGIC %python
+# MAGIC trip_df = trip_trend_df.toPandas()
+# MAGIC holidays_df = pd.DataFrame(holidays_lt, columns = ['date', 'name'])
+# MAGIC holidays_df.head(3)
+
+# COMMAND ----------
+
+holidays_df['trip_count'] = 0
+for i in range(len(holidays_df)):
+    date = holidays_df['date'].iloc[i]
+    if date in trip_df['date'].values:
+        value = trip_df[trip_df['date']==date]['trip_count'].values[0]
+        holidays_df['trip_count'].iloc[i] = value
+holidays_df = holidays_df[holidays_df['trip_count']>0]
+holidays_df.head(5)
+
+# COMMAND ----------
+
+# MAGIC %python
+# MAGIC holiday_colors = {
+# MAGIC     "Veterans Day": "lightcoral",
+# MAGIC     "Thanksgiving" : "darkgreen",
+# MAGIC     "Christmas Day" : "navy",
+# MAGIC     "Christmas Day (Observed)" : "navy",
+# MAGIC     "New Year's Day" : "red",
+# MAGIC     "New Year's Day (Observed)" : "red",
+# MAGIC     "Martin Luther King Jr. Day" : "teal",
+# MAGIC     "Washington's Birthday" : "lime",
+# MAGIC     "Memorial Day" : "blueviolet",
+# MAGIC     "Juneteenth National Independence Day" : "burlywood",
+# MAGIC     "Juneteenth National Independence Day (Observed)" :  "burlywood",
+# MAGIC     "Independence Day" : "aqua",
+# MAGIC     "Labor Day" : "hotpink",
+# MAGIC     "Columbus Day" : "silver"
+# MAGIC }
+
+# COMMAND ----------
+
+# MAGIC %python
+# MAGIC 
+# MAGIC plt.figure(dpi=200, figsize = (20,10))
+# MAGIC dates = [datetime.strptime(x, '%Y-%m-%d') for x in trip_df['date'].values]
+# MAGIC plt.plot(dates, trip_df['trip_count'])
+# MAGIC legends = ['Daily Trip Trend']
+# MAGIC # plt.scatter(holidays_df['date'], holidays_df['trip_count'], color = 'r', linewidth=3)
+# MAGIC for i in range(len(holidays_df)):
+# MAGIC     date = holidays_df['date'].iloc[i]
+# MAGIC     value = holidays_df['trip_count'].iloc[i]
+# MAGIC     name = holidays_df['name'].iloc[i]
+# MAGIC     plt.scatter(datetime.strptime(date, '%Y-%m-%d'), value, color = holiday_colors[name], linewidth=3)
+# MAGIC     legends.append(name)
+# MAGIC # plt.axhline(y = 30, color = 'r', linestyle = '-')
+# MAGIC # plt.axvline(x = 30, color = 'r', linestyle = '-')
+# MAGIC # plt.axvline(x = 0, color = 'r', linestyle = '-')
+# MAGIC 
+# MAGIC plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
+# MAGIC plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+# MAGIC 
+# MAGIC plt.legend(legends, loc='upper right', prop={'size': 6})
+# MAGIC plt.xlabel('Date')
+# MAGIC plt.ylabel('Trip Count')
+# MAGIC plt.xticks(rotation=45)
+# MAGIC plt.plot()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC # Trip With Weather
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT *, FROM_UNIXTIME(dt)
+# MAGIC FROM bronze_historic_weather_data
+# MAGIC ORDER BY dt
+# MAGIC LIMIT 30;
+
+# COMMAND ----------
+
+trip_trend_df.createOrReplaceTempView("trip_trend_table")
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT *
+# MAGIC FROM trip_trend_table as t1
+# MAGIC LEFT JOIN(
+# MAGIC   SELECT date, AVG(temp) as avg_temp, AVG(feels_like) as avg_feels_like, AVG(humidity) as avg_humidity, AVG(wind_speed) as avg_wind_speed, AVG(pop) as avg_pop, AVG(snow_1h) as avg_snow
+# MAGIC   FROM(
+# MAGIC     SELECT concat(YEAR(FROM_UNIXTIME(dt)),'-',LPAD(MONTH(FROM_UNIXTIME(dt)), 2, '0'),'-',LPAD(DAY(FROM_UNIXTIME(dt)), 2, '0')) as date, DATE_FORMAT(FROM_UNIXTIME(dt),'HH:mm:ss') as time, `temp`, feels_like, humidity, wind_speed, pop, snow_1h
+# MAGIC     FROM bronze_historic_weather_data
+# MAGIC   )
+# MAGIC   GROUP BY date
+# MAGIC ) as t2
+# MAGIC ON t1.date = t2.date
+# MAGIC WHERE t2.avg_temp IS NOT NULL
+# MAGIC ORDER BY t1.date;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT t1.trip_count, IF(t2.avg_snow>0, 1, 0) as has_snow, IF(t2.avg_pop>0.4, 1, 0) as likely_percipitating
+# MAGIC FROM trip_trend_table as t1
+# MAGIC LEFT JOIN(
+# MAGIC   SELECT date, AVG(temp) as avg_temp, AVG(feels_like) as avg_feels_like, AVG(humidity) as avg_humidity, AVG(wind_speed) as avg_wind_speed, AVG(pop) as avg_pop, AVG(snow_1h) as avg_snow
+# MAGIC   FROM(
+# MAGIC     SELECT concat(YEAR(FROM_UNIXTIME(dt)),'-',LPAD(MONTH(FROM_UNIXTIME(dt)), 2, '0'),'-',LPAD(DAY(FROM_UNIXTIME(dt)), 2, '0')) as date, DATE_FORMAT(FROM_UNIXTIME(dt),'HH:mm:ss') as time, `temp`, feels_like, humidity, wind_speed, pop, snow_1h
+# MAGIC     FROM bronze_historic_weather_data
+# MAGIC   )
+# MAGIC   GROUP BY date
+# MAGIC ) as t2
+# MAGIC ON t1.date = t2.date
+# MAGIC WHERE t2.avg_temp IS NOT NULL
+# MAGIC ORDER BY t1.date;
 
 # COMMAND ----------
 
