@@ -36,20 +36,22 @@ display(trip_df)
 
 # read from bronze weather dataset
 weather_df = spark.read.format("delta").load("dbfs:/FileStore/tables/G09/bronze_historic_weather_data/")
+weather_df = weather_df.orderBy("dt")
 display(weather_df)
 
 # COMMAND ----------
 
 # read in station info
-df = spark.read.format("delta").load(BRONZE_STATION_INFO_PATH)
-df = df.filter(df.name=="E 33 St & 1 Ave")
-display(df)
+station_df = spark.read.format("delta").load(BRONZE_STATION_INFO_PATH)
+station_df = station_df.filter(station_df.name=="E 33 St & 1 Ave")
+display(station_df)
 
 # COMMAND ----------
 
-df = spark.read.format("delta").load(BRONZE_STATION_STATUS_PATH)
-df = df.filter(df.station_id=="61c82689-3f4c-495d-8f44-e71de8f04088")
-display(df)
+status_df = spark.read.format("delta").load(BRONZE_STATION_STATUS_PATH)
+status_df = status_df.filter(status_df.station_id=="61c82689-3f4c-495d-8f44-e71de8f04088")
+status_df = status_df.orderBy("last_reported")
+display(status_df)
 
 # COMMAND ----------
 
@@ -57,3 +59,7 @@ import json
 
 # Return Success
 dbutils.notebook.exit(json.dumps({"exit_code": "OK"}))
+
+# COMMAND ----------
+
+
