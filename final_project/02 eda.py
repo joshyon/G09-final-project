@@ -27,7 +27,7 @@ print("YOUR CODE HERE...")
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC SELECT * FROM bronze_historic_bike_trip;
+# MAGIC SELECT * FROM bronze_historic_bike_trip WHERE start_station_name = 'E 33 St & 1 Ave';
 
 # COMMAND ----------
 
@@ -36,7 +36,14 @@ print("YOUR CODE HERE...")
 
 # COMMAND ----------
 
-trip_trend_df = spark.sql("SELECT concat(year,'-',month,'-',day) as date, concat(year,'-',month) as month_year, ride_id FROM(SELECT YEAR(started_at) AS year, MONTH(started_at) AS month, DAY(started_at) AS day, ride_id FROM bronze_historic_bike_trip) ORDER BY date")
+trip_trend_df = spark.sql("""
+                          SELECT concat(year,'-',month,'-',day) as date, concat(year,'-',month) as month_year, ride_id 
+                          FROM(
+                              SELECT YEAR(started_at) AS year, MONTH(started_at) AS month, DAY(started_at) AS day, ride_id
+                              FROM bronze_historic_bike_trip
+                              WHERE start_station_name = 'E 33 St & 1 Ave') 
+                          ORDER BY date
+                          """)
 
 # COMMAND ----------
 
@@ -46,6 +53,7 @@ trip_trend_df = spark.sql("SELECT concat(year,'-',month,'-',day) as date, concat
 # MAGIC import matplotlib.pyplot as plt
 # MAGIC import holidays
 # MAGIC import matplotlib.dates as mdates
+# MAGIC import seaborn as sns
 
 # COMMAND ----------
 
@@ -90,8 +98,9 @@ temp_df.createOrReplaceTempView("date_table")
 # MAGIC LEFT JOIN (
 # MAGIC   SELECT date, count(ride_id) as trip_count
 # MAGIC   FROM(
-# MAGIC     SELECT concat(YEAR(started_at),'-',LPAD(MONTH(started_at), 2, '0'),'-',LPAD(DAY(started_at), 2, '0')) as date, ride_id 
+# MAGIC     SELECT concat(YEAR(started_at),'-',LPAD(MONTH(started_at), 2, '0'),'-',LPAD(DAY(started_at), 2, '0')) as date, ride_id
 # MAGIC     FROM bronze_historic_bike_trip
+# MAGIC     WHERE start_station_name = 'E 33 St & 1 Ave'
 # MAGIC   ) as t1
 # MAGIC   GROUP BY date  
 # MAGIC ) as t2
@@ -108,6 +117,7 @@ LEFT JOIN (
   FROM(
     SELECT concat(YEAR(started_at),'-',LPAD(MONTH(started_at), 2, '0'),'-',LPAD(DAY(started_at), 2, '0')) as date, ride_id 
     FROM bronze_historic_bike_trip
+    WHERE start_station_name = 'E 33 St & 1 Ave'
   ) as t1
   GROUP BY date  
 ) as t2
@@ -242,6 +252,44 @@ trip_trend_df.createOrReplaceTempView("trip_trend_table")
 # MAGIC ON t1.date = t2.date
 # MAGIC WHERE t2.avg_temp IS NOT NULL
 # MAGIC ORDER BY t1.date;
+
+# COMMAND ----------
+
+sql_command2 = """
+SELECT *
+FROM trip_trend_table as t1
+LEFT JOIN(
+  SELECT date, AVG(temp) as avg_temp, AVG(feels_like) as avg_feels_like, AVG(humidity) as avg_humidity, AVG(wind_speed) as avg_wind_speed, AVG(pop) as avg_pop, AVG(snow_1h) as avg_snow
+  FROM(
+    SELECT concat(YEAR(FROM_UNIXTIME(dt)),'-',LPAD(MONTH(FROM_UNIXTIME(dt)), 2, '0'),'-',LPAD(DAY(FROM_UNIXTIME(dt)), 2, '0')) as date, DATE_FORMAT(FROM_UNIXTIME(dt),'HH:mm:ss') as time, `temp`, feels_like, humidity, wind_speed, pop, snow_1h
+    FROM bronze_historic_weather_data
+  )
+  GROUP BY date
+) as t2
+ON t1.date = t2.date
+WHERE t2.avg_temp IS NOT NULL
+ORDER BY t1.date
+"""
+
+weather_trip_trend_df = spark.sql(sql_command2)
+
+# COMMAND ----------
+
+# MAGIC %python
+# MAGIC weather_trip_df = weather_trip_trend_df.toPandas()
+# MAGIC weather_trip_df.head()
+
+# COMMAND ----------
+
+# MAGIC %python
+# MAGIC # Compute correlation matrix
+# MAGIC corr_matrix = weather_trip_df[['trip_count', 'avg_temp', 'avg_feels_like', 'avg_humidity', 'avg_wind_speed', 'avg_pop', 'avg_snow']].corr()
+# MAGIC 
+# MAGIC # Plot correlation heatmap
+# MAGIC sns.heatmap(corr_matrix, annot=True, cmap='coolwarm')
+# MAGIC plt.title('Correlation Heatmap')
+# MAGIC plt.figure(dpi=200, figsize=(20,10)) 
+# MAGIC plt.show()
 
 # COMMAND ----------
 
