@@ -3,18 +3,7 @@
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC CREATE DATABASE IF NOT EXISTS ETL
-# MAGIC LOCATION 'dbfs:/FileStore/tables/G09/'
-
-# COMMAND ----------
-
-# MAGIC %fs ls /FileStore/tables/G09
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC USE ETL
+# MAGIC %fs ls /FileStore/tables/G09/bronze/historic_bike
 
 # COMMAND ----------
 
@@ -34,11 +23,7 @@
 # MAGIC   end_lng double,
 # MAGIC   member_casual string
 # MAGIC )
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC SHOW TABLES IN ETL
+# MAGIC LOCATION 'dbfs:/FileStore/tables/G09/'
 
 # COMMAND ----------
 
@@ -52,7 +37,7 @@ print(start_date,end_date,hours_to_forecast, promote_model)
 
 # COMMAND ----------
 
-#This cell definites the readStreaming for the historic_bike_data
+#This cell defines the readStreaming for the historic_bike_data
 historic_bike_df = (spark.readStream
  .csv(BIKE_TRIP_DATA_PATH, header="true", schema= 
      ("""ride_id string,
@@ -79,6 +64,10 @@ historic_bike_df = (spark.readStream
  .trigger(availableNow=True)
  .toTable("bronze_historic_bike_trip")
 )
+
+# COMMAND ----------
+
+# MAGIC %fs ls /FileStore/tables/G09/bronze_historic_bike_trip
 
 # COMMAND ----------
 
@@ -114,6 +103,7 @@ historic_bike_df = (spark.readStream
 # MAGIC   lon double,
 # MAGIC   timezone string
 # MAGIC )
+# MAGIC LOCATION 'dbfs:/FileStore/tables/G09/'
 
 # COMMAND ----------
 
@@ -146,13 +136,18 @@ historic_weather_df = (spark.readStream
 
 #This is the writeStream for the historic_weather_data
 (historic_weather_df.writeStream
- .option("checkpointLocation", "f{GROUP_DATA_PATH}/bronze/historic_weather_checkpoint")
+ .option("checkpointLocation", f"{GROUP_DATA_PATH}/bronze/new_historic_weather/checkpoints")
  .outputMode("append")
  .trigger(availableNow=True)
  .toTable("bronze_historic_weather_data")
 )
 
 
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT * FROM bronze_historic_weather_data
 
 # COMMAND ----------
 
