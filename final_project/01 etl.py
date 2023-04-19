@@ -3,30 +3,6 @@
 
 # COMMAND ----------
 
-# MAGIC %fs ls /FileStore/tables/G09/bronze/historic_bike
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC CREATE TABLE IF NOT EXISTS bronze_historic_bike_trip (
-# MAGIC   ride_id string,
-# MAGIC   rideable_type string,
-# MAGIC   started_at timestamp,
-# MAGIC   ended_at timestamp,
-# MAGIC   start_station_name string,
-# MAGIC   start_station_id string,
-# MAGIC   end_station_name string,
-# MAGIC   end_station_id string,
-# MAGIC   start_lat double,
-# MAGIC   start_lng double,
-# MAGIC   end_lat double,
-# MAGIC   end_lng double,
-# MAGIC   member_casual string
-# MAGIC )
-# MAGIC LOCATION 'dbfs:/FileStore/tables/G09/'
-
-# COMMAND ----------
-
 start_date = str(dbutils.widgets.get('01.start_date'))
 end_date = str(dbutils.widgets.get('02.end_date'))
 hours_to_forecast = int(dbutils.widgets.get('03.hours_to_forecast'))
@@ -62,12 +38,22 @@ historic_bike_df = (spark.readStream
  .option("checkpointLocation", f"{GROUP_DATA_PATH}/bronze/historic_bike/checkpoints")
  .outputMode("append")
  .trigger(availableNow=True)
- .toTable("bronze_historic_bike_trip")
+ .format("delta")
+ .start(f"{GROUP_DATA_PATH}/bronze_historic_bike_trip.delta")
 )
+
+#change the toTable command to .save(GROUP_DATA_PATH + delta_table_name.delta)
 
 # COMMAND ----------
 
-# MAGIC %fs ls /FileStore/tables/G09/bronze_historic_bike_trip
+# MAGIC %fs ls /FileStore/tables/G09
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS bronze_historic_bike_trip
+# MAGIC   USING delta
+# MAGIC     LOCATION 'dbfs:/FileStore/tables/G09/bronze_historic_bike_trip.delta/'
 
 # COMMAND ----------
 
@@ -76,34 +62,6 @@ historic_bike_df = (spark.readStream
 #our_station_historic_df.createOrReplaceTempView("historic_bike_temp_view")
 
 #batch data about bike trips where our station is at the start or end
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC CREATE TABLE IF NOT EXISTS bronze_historic_weather_data (
-# MAGIC   dt integer,
-# MAGIC   temp double,
-# MAGIC   feels_like double,
-# MAGIC   pressure integer,
-# MAGIC   humidity integer,
-# MAGIC   dew_point double,
-# MAGIC   uvi double,
-# MAGIC   clouds integer,
-# MAGIC   visibility integer,
-# MAGIC   wind_speed double,
-# MAGIC   wind_deg integer,
-# MAGIC   pop double,
-# MAGIC   snow_1h double,
-# MAGIC   id integer,
-# MAGIC   main string,
-# MAGIC   description string,
-# MAGIC   icon string,
-# MAGIC   loc string,
-# MAGIC   lat double,
-# MAGIC   lon double,
-# MAGIC   timezone string
-# MAGIC )
-# MAGIC LOCATION 'dbfs:/FileStore/tables/G09/'
 
 # COMMAND ----------
 
@@ -136,13 +94,21 @@ historic_weather_df = (spark.readStream
 
 #This is the writeStream for the historic_weather_data
 (historic_weather_df.writeStream
- .option("checkpointLocation", f"{GROUP_DATA_PATH}/bronze/new_historic_weather/checkpoints")
+ .option("checkpointLocation", f"{GROUP_DATA_PATH}/bronze/historic_weather/checkpoints")
  .outputMode("append")
  .trigger(availableNow=True)
- .toTable("bronze_historic_weather_data")
+ .format("delta")
+ .start(f"{GROUP_DATA_PATH}/bronze_historic_weather.delta")
 )
 
 
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS bronze_historic_weather_data
+# MAGIC  USING delta
+# MAGIC     LOCATION 'dbfs:/FileStore/tables/G09/bronze_historic_weather.delta/'
 
 # COMMAND ----------
 
