@@ -29,8 +29,9 @@ print("YOUR CODE HERE...")
 # COMMAND ----------
 
 # read from bronze bike trip dataset
-trip_df = spark.read.format("delta").load("dbfs:/FileStore/tables/G09/bronze_historic_bike_trip/")
-display(trip_df)
+dbutils.fs.ls("dbfs:/FileStore/tables/")
+# trip_df = spark.read.format("delta").load("dbfs:/FileStore/tables/G09/bronze_historic_bike_trip/")
+# display(trip_df)
 
 # COMMAND ----------
 
