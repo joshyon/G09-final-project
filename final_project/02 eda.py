@@ -20,6 +20,20 @@ print("YOUR CODE HERE...")
 
 # COMMAND ----------
 
+display(dbutils.fs.ls(GROUP_DATA_PATH))
+
+# COMMAND ----------
+
+bike_data = spark.read.format("delta").load("dbfs:/FileStore/tables/G09/bronze_historic_bike_trip.delta/")
+bike_data.write.format("delta").mode("overwrite").saveAsTable("G09_db.bronze_historic_bike_trip")
+
+# COMMAND ----------
+
+weather_data = spark.read.format("delta").load("dbfs:/FileStore/tables/G09/bronze_historic_weather.delta/")
+weather_data.write.format("delta").mode("overwrite").saveAsTable("G09_db.bronze_historic_weather_data")
+
+# COMMAND ----------
+
 # MAGIC %sql
 # MAGIC USE G09_db;
 # MAGIC SHOW Tables
@@ -27,7 +41,7 @@ print("YOUR CODE HERE...")
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC SELECT * FROM bronze_historic_bike_trip WHERE start_station_name = 'E 33 St & 1 Ave';
+# MAGIC SELECT * FROM bronze_historic_bike_trip WHERE start_station_name = 'E 33 St & 1 Ave' or end_station_name = 'E 33 St & 1 Ave';
 
 # COMMAND ----------
 
@@ -39,9 +53,9 @@ print("YOUR CODE HERE...")
 trip_trend_df = spark.sql("""
                           SELECT concat(year,'-',month,'-',day) as date, concat(year,'-',month) as month_year, ride_id 
                           FROM(
-                              SELECT YEAR(started_at) AS year, MONTH(started_at) AS month, DAY(started_at) AS day, ride_id
+                              SELECT YEAR(started_at) AS year, MONTH(started_at) AS month, DAY(started_at) AS day, ride_id, if(start_station_name = 'E 33 St & 1 Ave', 'out', 'in') as trip_direction
                               FROM bronze_historic_bike_trip
-                              WHERE start_station_name = 'E 33 St & 1 Ave') 
+                              WHERE start_station_name = 'E 33 St & 1 Ave' or end_station_name = 'E 33 St & 1 Ave') 
                           ORDER BY date
                           """)
 
@@ -93,16 +107,16 @@ temp_df.createOrReplaceTempView("date_table")
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC SELECT date_table.date, concat(YEAR(date_table.date),'-',LPAD(MONTH(date_table.date), 2, '0')) as month_year, COALESCE(t2.trip_count, 0) AS trip_count
+# MAGIC SELECT date_table.date, concat(YEAR(date_table.date),'-',LPAD(MONTH(date_table.date), 2, '0')) as month_year, COALESCE(t2.trip_count, 0) AS trip_count, t2.trip_direction
 # MAGIC FROM date_table
 # MAGIC LEFT JOIN (
-# MAGIC   SELECT date, count(ride_id) as trip_count
+# MAGIC   SELECT date, count(ride_id) as trip_count, t1.trip_direction
 # MAGIC   FROM(
-# MAGIC     SELECT concat(YEAR(started_at),'-',LPAD(MONTH(started_at), 2, '0'),'-',LPAD(DAY(started_at), 2, '0')) as date, ride_id
+# MAGIC     SELECT concat(YEAR(started_at),'-',LPAD(MONTH(started_at), 2, '0'),'-',LPAD(DAY(started_at), 2, '0')) as date, ride_id, if(start_station_name = 'E 33 St & 1 Ave', 'out', 'in') as trip_direction
 # MAGIC     FROM bronze_historic_bike_trip
-# MAGIC     WHERE start_station_name = 'E 33 St & 1 Ave'
+# MAGIC     WHERE start_station_name = 'E 33 St & 1 Ave' or end_station_name = 'E 33 St & 1 Ave'
 # MAGIC   ) as t1
-# MAGIC   GROUP BY date  
+# MAGIC   GROUP BY date, t1.trip_direction
 # MAGIC ) as t2
 # MAGIC on date_table.date = t2.date
 # MAGIC ORDER BY date_table.date
@@ -110,22 +124,32 @@ temp_df.createOrReplaceTempView("date_table")
 # COMMAND ----------
 
 sql_command = """
-SELECT date_table.date, concat(YEAR(date_table.date),'-',LPAD(MONTH(date_table.date), 2, '0')) as month_year, COALESCE(t2.trip_count, 0) AS trip_count
+SELECT date_table.date, concat(YEAR(date_table.date),'-',LPAD(MONTH(date_table.date), 2, '0')) as month_year, WEEKDAY(date_table.date) as weekday, COALESCE(t2.trip_count, 0) AS trip_count, t2.trip_direction
 FROM date_table
 LEFT JOIN (
-  SELECT date, count(ride_id) as trip_count
+  SELECT date, count(ride_id) as trip_count, t1.trip_direction
   FROM(
-    SELECT concat(YEAR(started_at),'-',LPAD(MONTH(started_at), 2, '0'),'-',LPAD(DAY(started_at), 2, '0')) as date, ride_id 
+    SELECT concat(YEAR(started_at),'-',LPAD(MONTH(started_at), 2, '0'),'-',LPAD(DAY(started_at), 2, '0')) as date, ride_id, if(start_station_name = 'E 33 St & 1 Ave', 'out', 'in') as trip_direction
     FROM bronze_historic_bike_trip
-    WHERE start_station_name = 'E 33 St & 1 Ave'
+    WHERE start_station_name = 'E 33 St & 1 Ave' or end_station_name = 'E 33 St & 1 Ave'
   ) as t1
-  GROUP BY date  
+  GROUP BY date, t1.trip_direction
 ) as t2
 on date_table.date = t2.date
 ORDER BY date_table.date
 """
 
-trip_trend_df = spark.sql(sql_command)
+trip_trend_df_all = spark.sql(sql_command)
+trip_trend_df = trip_trend_df_all.filter((trip_trend_df_all.trip_direction == 'out') | (trip_trend_df_all.trip_direction.isNull()))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Trip trends plot on daily, monthly, and weekday-based resolution. From the daily trip trend we can see that incoming and outgoing trips' counts are roughly the same.
+
+# COMMAND ----------
+
+display(trip_trend_df_all)
 
 # COMMAND ----------
 
@@ -193,6 +217,11 @@ holidays_df.head(5)
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC The daily trip trend plot bellow incorporated the holidays. The dots represent the trip counts on the specific holidays and the colors differentiate different holidays.
+
+# COMMAND ----------
+
 # MAGIC %python
 # MAGIC 
 # MAGIC plt.figure(dpi=200, figsize = (20,10))
@@ -238,6 +267,11 @@ trip_trend_df.createOrReplaceTempView("trip_trend_table")
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC The following plots try to display the influence of different weather aspects on the trip count of the station
+
+# COMMAND ----------
+
 # MAGIC %sql
 # MAGIC SELECT *
 # MAGIC FROM trip_trend_table as t1
@@ -275,6 +309,11 @@ weather_trip_trend_df = spark.sql(sql_command2)
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC The correlation heat mat shows the correlation between different station and weather variables.
+
+# COMMAND ----------
+
 # MAGIC %python
 # MAGIC weather_trip_df = weather_trip_trend_df.toPandas()
 # MAGIC weather_trip_df.head()
@@ -290,6 +329,11 @@ weather_trip_trend_df = spark.sql(sql_command2)
 # MAGIC plt.title('Correlation Heatmap')
 # MAGIC plt.figure(dpi=200, figsize=(20,10)) 
 # MAGIC plt.show()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC The percipitation probability and snow value may not only be use as a numerical variable. The amount may not be that important. Having percipitation or snow and having a sunny or windy day may already be influential to the station's operation.
 
 # COMMAND ----------
 
