@@ -165,10 +165,11 @@ from pyspark.sql.functions import col, window, count, when, sum
 from pyspark.sql.functions import dayofweek
 from pyspark.sql.functions import from_unixtime
 
-weather_data = spark.read.table("bronze_historic_weather_data")
+weather_data = spark.read.load("dbfs:/FileStore/tables/G09/bronze_historic_weather.delta")
+
 weather_data = weather_data.withColumn('date_timestamp', from_unixtime('dt'))
 # weather_data.show()
-bike_trip_info = spark.read.table("bronze_historic_bike_trip").filter((col("start_station_name") == "E 33 St & 1 Ave") | (col("end_station_name") == "E 33 St & 1 Ave")).orderBy(col("started_at").asc())
+bike_trip_info = spark.read.load("dbfs:/FileStore/tables/G09/bronze_historic_bike_trip.delta").filter((col("start_station_name") == "E 33 St & 1 Ave") | (col("end_station_name") == "E 33 St & 1 Ave")).orderBy(col("started_at").asc())
 # bike_trip_info.show(n=1000)
 
 # COMMAND ----------
