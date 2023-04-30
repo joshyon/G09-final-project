@@ -116,24 +116,114 @@ if not production_exist:
         # register a copy of the original model to push to production
         baseline_model_detail2 = mlflow.register_model(model_uri=model_uri, name=GROUP_MODEL_NAME)
         client.transition_model_version_stage(name=GROUP_MODEL_NAME, version=baseline_model_detail2.version, stage="Production")
+        # create widget so it could be used by other notebook
         dbutils.widgets.text('Staging uri', model_uri)
         dbutils.widgets.text('Production uri', model_uri)
-
+        staging_uri = None
+        production_uri = None
+else:
+    print("Already has a production model, skip building the baseline model. ")
+    version_list = client.search_model_versions("name = '%s'" % GROUP_MODEL_NAME)
+    production_uri = [v.source for v in version_list if v.current_stage == "Production"][0]
+    dbutils.widgets.text('Production uri', production_uri)
+    latest_staging_version = max([v.version for v in version_list])
+    staging_uri = [v.source for v in version_list if v.version == latest_staging_version][0]
+    dbutils.widgets.text('Staging uri', staging_uri)
 
 # COMMAND ----------
 
 # if there is already a production model, construct a fine tuned model and push it only to staging. 
-# param_grid = {
-#     'yearly_seasonality': [True],
-#     'weekly_seasonality': [True],
-#     'daily_seasonality': [True],
-#     'changepoint_prior_scale': [0.001, 0.05, 0.08, 0.1, 0.25, 0.5]
-#     'seasonality_prior_scale': [0.1, 1, 5, 10, 15, 20, 50, 80, 100]
-#     'seasonality_mode': ['additive', 'multiplicative']
-# }
+# helper function: define the objective function for hyperopt
+def objective(search_space):
+    updated_model = Prophet(yearly_seasonality=True, 
+                             weekly_seasonality=True, 
+                             daily_seasonality=True, 
+                             changepoint_prior_scale=search_space["changepoint_prior_scale"], 
+                             seasonality_prior_scale=search_space["seasonality_prior_scale"],
+                             seasonality_mode="additive")
+    # add additional multivariate regressors and holidays
+    updated_model.add_regressor("weekday_indicator")
+    updated_model.add_regressor("temp")
+    updated_model.add_regressor("pop")
+    updated_model.add_regressor("snow_1h")
+    updated_model.add_country_holidays(country_name='US')
+    updated_model.fit(trip_data)
+    # cross validation
+    updated_model_cv = cross_validation(model=updated_model, horizon="91.25 days", parallel="threads")
+    # model performance
+    updated_model_p = performance_metrics(updated_model_cv, rolling_window=1)
+    mse = updated_model_p["mse"].mean()
+    return {'loss': mse, 'status': STATUS_OK}
 
-# # reference and credit: prophet example notebook provided in the share folder.  
-# all_params = [dict(zip(param_grid.keys(), v)) for v in itertools.product(*param_grid.values())]
+# COMMAND ----------
+
+# define the search space for the hyperparameter
+if production_exist:
+    search_space = {
+        'changepoint_prior_scale': hp.uniform('changepoint_prior_scale', 0.001, 0.5),
+        'seasonality_prior_scale': hp.uniform('seasonality_prior_scale', 0.01, 100)
+    }
+    # set up other hyperparameter tuning arguments
+    algo=tpe.suggest
+    spark_trials = SparkTrials()
+
+    with mlflow.start_run():
+        argmin = fmin(
+        fn=objective,
+        space=search_space,
+        algo=algo,
+        max_evals=40,
+        trials=spark_trials)
+
+        # set up, register, and stage the best model found
+        selected_model = Prophet(yearly_seasonality=True, 
+                                weekly_seasonality=True, 
+                                daily_seasonality=True, 
+                                changepoint_prior_scale=argmin["changepoint_prior_scale"], 
+                                seasonality_prior_scale=argmin["seasonality_prior_scale"],
+                                seasonality_mode="additive")
+        selected_model.fit(trip_data) # fit the model
+        # cross validation
+        selected_model_cv = cross_validation(model=selected_model, horizon="91.25 days", parallel="threads")
+        # model performance
+        selected_model_p = performance_metrics(selected_model_cv, rolling_window=1)
+        # record the performance metric
+        metric_dict = {}
+        metric_list = ["mse", "rmse", "mae", "mdape", "smape", "coverage"]
+        for m in metric_list:
+            metric_dict[m] = selected_model_p[m].mean()
+        # get the model parameter
+        param = extract_params(selected_model)
+
+        # log the original model
+        mlflow.prophet.log_model(selected_model, artifact_path=ARTIFACT_PATH)
+        mlflow.log_params(param)
+        mlflow.log_metrics(metric_dict)
+        model_uri = mlflow.get_artifact_uri(ARTIFACT_PATH)
+        print(model_uri)
+        # register model and push to staging
+        selected_model_detail = mlflow.register_model(model_uri=model_uri, name=GROUP_MODEL_NAME)
+        client.transition_model_version_stage(name=GROUP_MODEL_NAME, version=selected_model_detail.version, stage="Staging")
+
+if production_exist:
+    dbutils.widgets.remove("Staging uri")
+
+
+# COMMAND ----------
+
+if production_exist:
+    dbutils.widgets.text('Staging uri', model_uri)
+
+# COMMAND ----------
+
+# for i in range(1, 9):
+#     client.transition_model_version_stage(
+#         name=GROUP_MODEL_NAME,
+#         version=i,
+#         stage="Archived"
+#     )
+
+# client.delete_registered_model(name=GROUP_MODEL_NAME)
 
 # COMMAND ----------
 
@@ -141,7 +231,3 @@ import json
 
 # Return Success
 dbutils.notebook.exit(json.dumps({"exit_code": "OK"}))
-
-# COMMAND ----------
-
-
