@@ -24,124 +24,116 @@ print("YOUR CODE HERE...")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Explore the Bronze Dataset
-
-# COMMAND ----------
-
-# read from BRONZE BIKE TRIP dataset
-# dbutils.fs.ls("dbfs:/FileStore/tables/G09/") # TODO: debugging line to be deleted
-trip_df = spark.read.format("delta").load("dbfs:/FileStore/tables/G09/bronze_historic_bike_trip.delta/")
-display(trip_df)
-
-# COMMAND ----------
-
-# read from BRONZE WHEATER dataset
-weather_df = spark.read.format("delta").load("dbfs:/FileStore/tables/G09/bronze_historic_weather.delta/")
-weather_df = weather_df.orderBy("dt")
-display(weather_df)
-
-# COMMAND ----------
-
-# read in STATION INFO
-station_df = spark.read.format("delta").load(BRONZE_STATION_INFO_PATH)
-station_df = station_df.filter(station_df.name=="E 33 St & 1 Ave")
-display(station_df)
-
-# COMMAND ----------
-
-# read in STATION STATUS
-status_df = spark.read.format("delta").load(BRONZE_STATION_STATUS_PATH)
-status_df = status_df.filter(status_df.station_id=="61c82689-3f4c-495d-8f44-e71de8f04088")
-status_df = status_df.orderBy("last_reported")
-display(status_df)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Experiment with Fake Training Data
-
-# COMMAND ----------
-
-# a fake training dataset was uploaded to g09_db, the table was named as "fake_training_data"
-# read in fake data
-from pyspark.sql.functions import *
-trip_data = spark.read.format("delta").load("dbfs:/FileStore/tables/G09/hourly_trip_data/").toPandas()
-# fake_df = fake_df.rename(columns={"Time": "ds", "Net_Change": "y"})
-display(trip_data)
+# MAGIC ### Import Packages
 
 # COMMAND ----------
 
 # import useful package for ML
 import json
+import mlflow
+import itertools
+import datetime
+import plotly.express as px
 import pandas as pd
 import numpy as np
 from prophet import Prophet, serialize
 from prophet.diagnostics import cross_validation, performance_metrics
-import plotly.express as px
-import itertools
+from hyperopt import fmin, tpe, hp, SparkTrials, STATUS_OK, Trials
 np.random.seed(202)
 
-ARTIFACT_NAME = "G09_model"
+ARTIFACT_PATH = "G09_model"
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Create the Baseline Model
+# MAGIC ### Read Silver Table As Training Data
 
 # COMMAND ----------
 
-# create and fit the baseline model
-baseline_model = Prophet()
-baseline_model.add_regressor("Temperature")
-baseline_model.add_regressor("Probability_of_Precipitation")
-baseline_model.add_regressor("Amount_of_Snowfall")
-baseline_model.add_regressor("Weekday")
-baseline_model.add_regressor("Holiday")
-baseline_model.fit(fake_df)
-
-# cross validation 
-baseline_model_cv = cross_validation(model=baseline_model, horizon="10 hours", parallel="threads")
-display(baseline_model_cv)
-
-# model performance
-baseline_model_p = performance_metrics(baseline_model_cv, rolling_window=1)
-display(baseline_model_p)
-
-print(f"MAPE of baseline model: {baseline_model_p['mape'].values[0]}")
+# read silver table
+trip_data = spark.read.csv("dbfs:/FileStore/tables/G09/hourly_trip_data/", header=True, inferSchema=True).toPandas()
+trip_data = trip_data.rename(columns={"date_timestamp": "ds", "bikes_net_change": "y"}) # rename columns to be automatically identified by Prophet model
+display(trip_data)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Create a Tuned Model
+# MAGIC ### ML Model Construction
 
 # COMMAND ----------
 
-param_grid = {
-    'yearly_seasonality': [True],
-    'weekly_seasonality': [True],
-    'daily_seasonality': [True],
-    'changepoint_prior_scale': [0.001],  # , 0.05, 0.08, 0.5
-    'seasonality_prior_scale': [0.01],  # , 1, 5, 10, 12
-    'seasonality_mode': ['additive', 'multiplicative']
-}
+# check whether there is already a model in production. if not, create a baseline model
+production_exist = False
+client = mlflow.tracking.MlflowClient()
+version_list = client.search_model_versions("name = '%s'" % GROUP_MODEL_NAME)
+for version in version_list:
+    if version.current_stage == "Production":
+        production_exist = True
+        break
 
-all_params = [dict(zip(param_grid.keys(), v)) for v in itertools.product(*param_grid.values())]
+print(f"Currently has a production model: {production_exist}")
 
-for kwargs in all_params:
-    updated_model = Prophet(**kwargs)
-    updated_model.add_regressor("Temperature")
-    updated_model.add_regressor("Probability_of_Precipitation")
-    updated_model.add_regressor("Amount_of_Snowfall")
-    updated_model.add_regressor("Weekday")
-    updated_model.add_regressor("Holiday")
-    updated_model.fit(fake_df)
+# COMMAND ----------
 
-    updated_model_cv = cross_validation(model=updated_model, horizon="10 hours", parallel="threads")
+# extract model parameters. reference and credit: prophet example notebook provided in the share folder.  
+def extract_params(model):
+    return {attr: getattr(model, attr) for attr in serialize.SIMPLE_ATTRIBUTES}
 
-    updated_model_p = performance_metrics(updated_model_cv, rolling_window=1)
+# COMMAND ----------
+
+# if there is not a production model yet, create a baseline model and push it to production and staging at the same time
+# TODO: LOG THE BASELINE MODEL, PUSH IT TO PRODUCTION, AND WORK ON MORE COMPLEX MODELS
+if not production_exist:
+    with mlflow.start_run():
+        baseline_model = Prophet()
+        # add additional multivariate regressors
+        baseline_model.add_regressor("weekday_indicator")
+        baseline_model.add_regressor("temp")
+        baseline_model.add_regressor("pop")
+        baseline_model.add_regressor("snow_1h")
+        baseline_model.fit(trip_data) # fit the model
+        # cross validation
+        baseline_model_cv = cross_validation(model=baseline_model, horizon="91.25 days", parallel="threads")
+        # model performance
+        baseline_model_p = performance_metrics(baseline_model_cv, rolling_window=1)
+        # display(baseline_model_p)
+        # record the performance metric
+        metric_dict = {}
+        metric_list = ["mse", "rmse", "mae", "mdape", "smape", "coverage"]
+        for m in metric_list:
+            metric_dict[m] = baseline_model_p[m].mean()
+        # get the model parameter
+        param = extract_params(baseline_model)
+
+        # log the original model
+        mlflow.prophet.log_model(baseline_model, artifact_path=ARTIFACT_PATH)
+        mlflow.log_params(param)
+        mlflow.log_metrics(metric_dict)
+        model_uri = mlflow.get_artifact_uri(ARTIFACT_PATH)
+        # register model and push to staging
+        baseline_model_detail = mlflow.register_model(model_uri=model_uri, name=GROUP_MODEL_NAME)
+        client.transition_model_version_stage(name=GROUP_MODEL_NAME, version=baseline_model_detail.version, stage="Staging")
+        # register a copy of the original model to push to production
+        baseline_model_detail2 = mlflow.register_model(model_uri=model_uri, name=GROUP_MODEL_NAME)
+        client.transition_model_version_stage(name=GROUP_MODEL_NAME, version=baseline_model_detail2.version, stage="Production")
+        dbutils.widgets.text('Staging uri', model_uri)
+        dbutils.widgets.text('Production uri', model_uri)
 
 
+# COMMAND ----------
 
+# if there is already a production model, construct a fine tuned model and push it only to staging. 
+# param_grid = {
+#     'yearly_seasonality': [True],
+#     'weekly_seasonality': [True],
+#     'daily_seasonality': [True],
+#     'changepoint_prior_scale': [0.001, 0.05, 0.08, 0.1, 0.25, 0.5]
+#     'seasonality_prior_scale': [0.1, 1, 5, 10, 15, 20, 50, 80, 100]
+#     'seasonality_mode': ['additive', 'multiplicative']
+# }
+
+# # reference and credit: prophet example notebook provided in the share folder.  
+# all_params = [dict(zip(param_grid.keys(), v)) for v in itertools.product(*param_grid.values())]
 
 # COMMAND ----------
 
