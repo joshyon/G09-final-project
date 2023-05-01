@@ -81,6 +81,18 @@ def extract_params(model):
 
 # COMMAND ----------
 
+# specify the holidays that we want to consider
+holiday_to_consider = pd.DataFrame({
+  'holiday': 'holiday_to_consider',
+  'ds': pd.to_datetime(['2021-01-01', '2021-11-25', '2021-12-25',
+                        '2022-01-01', '2022-11-24', '2022-12-25',
+                        '2023-01-01', '2023-11-23', '2023-12-25']),
+  'lower_window': 0,
+  'upper_window': 1,
+})
+
+# COMMAND ----------
+
 # if there is not a production model yet, create a baseline model and push it to production and staging at the same time
 # TODO: LOG THE BASELINE MODEL, PUSH IT TO PRODUCTION, AND WORK ON MORE COMPLEX MODELS
 if not production_exist:
@@ -140,13 +152,14 @@ def objective(search_space):
                              daily_seasonality=True, 
                              changepoint_prior_scale=search_space["changepoint_prior_scale"], 
                              seasonality_prior_scale=search_space["seasonality_prior_scale"],
-                             seasonality_mode="additive")
+                             seasonality_mode="additive",
+                             holidays=holiday_to_consider)
     # add additional multivariate regressors and holidays
     updated_model.add_regressor("weekday_indicator")
     updated_model.add_regressor("temp")
     updated_model.add_regressor("pop")
     updated_model.add_regressor("snow_1h")
-    updated_model.add_country_holidays(country_name='US')
+    # updated_model.add_country_holidays(country_name='US')
     updated_model.fit(trip_data)
     # cross validation
     updated_model_cv = cross_validation(model=updated_model, horizon="91.25 days", parallel="threads")
@@ -181,7 +194,13 @@ if production_exist:
                                 daily_seasonality=True, 
                                 changepoint_prior_scale=argmin["changepoint_prior_scale"], 
                                 seasonality_prior_scale=argmin["seasonality_prior_scale"],
-                                seasonality_mode="additive")
+                                seasonality_mode="additive",
+                                holidays=holiday_to_consider)
+        selected_model.add_regressor("weekday_indicator")
+        selected_model.add_regressor("temp")
+        selected_model.add_regressor("pop")
+        selected_model.add_regressor("snow_1h")                        
+        # selected_model.add_country_holidays(country_name='US')
         selected_model.fit(trip_data) # fit the model
         # cross validation
         selected_model_cv = cross_validation(model=selected_model, horizon="91.25 days", parallel="threads")
@@ -205,17 +224,19 @@ if production_exist:
         selected_model_detail = mlflow.register_model(model_uri=model_uri, name=GROUP_MODEL_NAME)
         client.transition_model_version_stage(name=GROUP_MODEL_NAME, version=selected_model_detail.version, stage="Staging")
 
+# remove the original widget for staging uri
 if production_exist:
     dbutils.widgets.remove("Staging uri")
 
-
 # COMMAND ----------
 
+# updating staging uri widget
 if production_exist:
     dbutils.widgets.text('Staging uri', model_uri)
 
 # COMMAND ----------
 
+# remove the registered model from mlflow
 # for i in range(1, 9):
 #     client.transition_model_version_stage(
 #         name=GROUP_MODEL_NAME,
