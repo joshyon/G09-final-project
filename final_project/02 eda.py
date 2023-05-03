@@ -1,22 +1,11 @@
 # Databricks notebook source
-# MAGIC %run ./includes/includes
+# MAGIC %md
+# MAGIC # README
+# MAGIC The following codes created the necessary plots that help answer questions of EDA part. Some markdown cells are added around the import code blocks to explain what the code does. Other markdown cells are used to answer the EDA questions based on the plots, and these markdown cells all have headings that explain which question they are answering to.
 
 # COMMAND ----------
 
-dbutils.widgets.removeAll()
-
-dbutils.widgets.text('01.start_date', "2021-10-01")
-dbutils.widgets.text('02.end_date', "2023-03-01")
-dbutils.widgets.text('03.hours_to_forecast', '4')
-dbutils.widgets.text('04.promote_model', 'No')
-
-start_date = str(dbutils.widgets.get('01.start_date'))
-end_date = str(dbutils.widgets.get('02.end_date'))
-hours_to_forecast = int(dbutils.widgets.get('03.hours_to_forecast'))
-promote_model = bool(True if str(dbutils.widgets.get('04.promote_model')).lower() == 'yes' else False)
-
-print(start_date,end_date,hours_to_forecast, promote_model)
-print("YOUR CODE HERE...")
+# MAGIC %run ./includes/includes
 
 # COMMAND ----------
 
@@ -24,13 +13,14 @@ display(dbutils.fs.ls(GROUP_DATA_PATH))
 
 # COMMAND ----------
 
-bike_data = spark.read.format("delta").load("dbfs:/FileStore/tables/G09/bronze_historic_bike_trip.delta/")
-bike_data.write.format("delta").mode("overwrite").saveAsTable("G09_db.bronze_historic_bike_trip")
+# bike_data = spark.read.format("delta").load("dbfs:/FileStore/tables/G09/bronze_historic_bike_trip.delta/")
+# # filtered_bike_data = bike_data.filter((col("start_station_name") == "E 33 St & 1 Ave") | (col("end_station_name") == "E 33 St & 1 Ave"))
+# bike_data.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable("G09_db.bronze_historic_bike_trip")
 
 # COMMAND ----------
 
-weather_data = spark.read.format("delta").load("dbfs:/FileStore/tables/G09/bronze_historic_weather.delta/")
-weather_data.write.format("delta").mode("overwrite").saveAsTable("G09_db.bronze_historic_weather_data")
+# weather_data = spark.read.format("delta").load("dbfs:/FileStore/tables/G09/bronze_historic_weather.delta/")
+# weather_data.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable("G09_db.bronze_historic_weather_data")
 
 # COMMAND ----------
 
@@ -40,8 +30,8 @@ weather_data.write.format("delta").mode("overwrite").saveAsTable("G09_db.bronze_
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC SELECT * FROM bronze_historic_bike_trip WHERE start_station_name = 'E 33 St & 1 Ave' or end_station_name = 'E 33 St & 1 Ave';
+# %sql
+# SELECT * FROM bronze_historic_bike_trip WHERE start_station_name = 'E 33 St & 1 Ave' or end_station_name = 'E 33 St & 1 Ave';
 
 # COMMAND ----------
 
@@ -106,20 +96,20 @@ temp_df.createOrReplaceTempView("date_table")
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC SELECT date_table.date, concat(YEAR(date_table.date),'-',LPAD(MONTH(date_table.date), 2, '0')) as month_year, COALESCE(t2.trip_count, 0) AS trip_count, t2.trip_direction
-# MAGIC FROM date_table
-# MAGIC LEFT JOIN (
-# MAGIC   SELECT date, count(ride_id) as trip_count, t1.trip_direction
-# MAGIC   FROM(
-# MAGIC     SELECT concat(YEAR(started_at),'-',LPAD(MONTH(started_at), 2, '0'),'-',LPAD(DAY(started_at), 2, '0')) as date, ride_id, if(start_station_name = 'E 33 St & 1 Ave', 'out', 'in') as trip_direction
-# MAGIC     FROM bronze_historic_bike_trip
-# MAGIC     WHERE start_station_name = 'E 33 St & 1 Ave' or end_station_name = 'E 33 St & 1 Ave'
-# MAGIC   ) as t1
-# MAGIC   GROUP BY date, t1.trip_direction
-# MAGIC ) as t2
-# MAGIC on date_table.date = t2.date
-# MAGIC ORDER BY date_table.date
+# %sql
+# SELECT date_table.date, concat(YEAR(date_table.date),'-',LPAD(MONTH(date_table.date), 2, '0')) as month_year, COALESCE(t2.trip_count, 0) AS trip_count, t2.trip_direction
+# FROM date_table
+# LEFT JOIN (
+#   SELECT date, count(ride_id) as trip_count, t1.trip_direction
+#   FROM(
+#     SELECT concat(YEAR(started_at),'-',LPAD(MONTH(started_at), 2, '0'),'-',LPAD(DAY(started_at), 2, '0')) as date, ride_id, if(start_station_name = 'E 33 St & 1 Ave', 'out', 'in') as trip_direction
+#     FROM bronze_historic_bike_trip
+#     WHERE start_station_name = 'E 33 St & 1 Ave' or end_station_name = 'E 33 St & 1 Ave'
+#   ) as t1
+#   GROUP BY date, t1.trip_direction
+# ) as t2
+# on date_table.date = t2.date
+# ORDER BY date_table.date
 
 # COMMAND ----------
 
@@ -159,6 +149,7 @@ display(trip_trend_df_all)
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Answer to Q1 and Q2 of EDA questions:
 # MAGIC The daily trip trend plot certainly suggests that seasonality exists both every couple of days and every couple of months. To dive deeper, the monthly trip trend plot suggests that there are more trips during the summer time and fewer trips during the winter time, suggesting a potential correlation between trip counts and temperature. The weekday trip trend plot suggests that workdays have relatively more trips than weekends.
 
 # COMMAND ----------
@@ -238,6 +229,11 @@ holidays_df.head(5)
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Answer to Q3 of EDA questions:
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC The daily trip trend plot bellow incorporated the holidays. The dots represent the trip counts on the specific holidays and the colors differentiate different holidays.
 
 # COMMAND ----------
@@ -289,6 +285,11 @@ holidays_df.head(5)
 # COMMAND ----------
 
 trip_trend_df.createOrReplaceTempView("trip_trend_table")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Answer to Q4 of EDA questions:
 
 # COMMAND ----------
 
@@ -359,6 +360,11 @@ weather_trip_trend_df = spark.sql(sql_command2)
 # MAGIC plt.title('Correlation Heatmap')
 # MAGIC plt.figure(dpi=200, figsize=(20,10)) 
 # MAGIC plt.show()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Extra answer to Q4 of EDA questions:
 
 # COMMAND ----------
 
