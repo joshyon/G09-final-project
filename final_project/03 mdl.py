@@ -51,6 +51,7 @@ ARTIFACT_PATH = "G09_model"
 # COMMAND ----------
 
 # read silver table
+# TODO: NEED TO READ FROM DELTA TABLES
 trip_data = spark.read.csv("dbfs:/FileStore/tables/G09/hourly_trip_data/", header=True, inferSchema=True).toPandas()
 trip_data = trip_data.rename(columns={"date_timestamp": "ds", "bikes_net_change": "y"}) # rename columns to be automatically identified by Prophet model
 display(trip_data)
@@ -214,8 +215,8 @@ if production_exist:
         # get the model parameter
         param = extract_params(selected_model)
 
-        # log the original model
-        mlflow.prophet.log_model(selected_model, artifact_path=ARTIFACT_PATH)
+        # log the original model 
+        mlflow.prophet.log_model(selected_model, artifact_path=ARTIFACT_PATH) # store model artifact to be retrieved by app notebook
         mlflow.log_params(param)
         mlflow.log_metrics(metric_dict)
         model_uri = mlflow.get_artifact_uri(ARTIFACT_PATH)
