@@ -25,6 +25,11 @@ display(trip_data)
 display(station_info)
 display(weather_data)
 
+# baseline_model.add_regressor("weekday_indicator")
+#         baseline_model.add_regressor("temp")
+#         baseline_model.add_regressor("pop")
+#         baseline_model.add_regressor("snow_1h")
+
 # COMMAND ----------
 
 # filtering and cleaning the streaming tables
@@ -33,8 +38,12 @@ filtered_trip_data['last_reported'] = pd.to_datetime(filtered_trip_data['last_re
 
 filtered_station_info = station_info[station_info['external_id'] == "61c82689-3f4c-495d-8f44-e71de8f04088"]
 
+filtered_weather_data = weather_data[['temp', 'pop', 'rain.1h', 'time']]
+
+
 display(filtered_trip_data)
-display(station_info)
+display(filtered_station_info)
+display(filtered_weather_data)
 
 # COMMAND ----------
 
