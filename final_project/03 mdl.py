@@ -52,8 +52,9 @@ ARTIFACT_PATH = "G09_model"
 
 # read silver table
 # TODO: NEED TO READ FROM DELTA TABLES
-trip_data = spark.read.csv("dbfs:/FileStore/tables/G09/hourly_trip_data/", header=True, inferSchema=True).toPandas()
+trip_data = spark.read.format("delta").load("dbfs:/FileStore/tables/G09/silver_hourly_trip_info.delta/").toPandas()
 trip_data = trip_data.rename(columns={"date_timestamp": "ds", "bikes_net_change": "y"}) # rename columns to be automatically identified by Prophet model
+trip_data = trip_data.sort_values(["ds"])
 display(trip_data)
 
 # COMMAND ----------
