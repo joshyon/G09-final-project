@@ -25,11 +25,6 @@ display(trip_data)
 display(station_info)
 display(weather_data)
 
-# baseline_model.add_regressor("weekday_indicator")
-#         baseline_model.add_regressor("temp")
-#         baseline_model.add_regressor("pop")
-#         baseline_model.add_regressor("snow_1h")
-
 # COMMAND ----------
 
 import datetime
@@ -45,7 +40,7 @@ def is_weekday(day):
     return day.weekday() < 5
 weather_data['weekday_indicator'] = weather_data['time'].apply(is_weekday)
 
-filtered_weather_data = weather_data[['weekday_indicator', 'temp', 'pop', 'rain.1h', 'time']]
+filtered_weather_data = weather_data[['weekday_indicator', 'temp', 'pop', 'time']]
 
 
 display(filtered_trip_data)
@@ -56,33 +51,7 @@ display(filtered_weather_data)
 
 # COMMAND ----------
 
-# Load the production model using MLflow
-def load_production_model():
-    client = mlflow.tracking.MlflowClient()
-    production_model_version = client.get_latest_versions(GROUP_MODEL_NAME, stages=["Production"])[0]
-    model_uri = f"models:/{GROUP_MODEL_NAME}/{production_model_version.version}"
-    return mlflow.prophet.load_model(model_uri)
 
-def prepare_future_df(hours, df_last):
-    future_df = df_last.copy()
-    future_df = future_df.drop(columns=["y"])
-    future_timestamps = [df_last["ds"].max() + datetime.timedelta(hours=i+1) for i in range(hours)]
-    future_df = future_df.append(pd.DataFrame({"ds": future_timestamps}), ignore_index=True)
-    return future_df
-
-# Load the production model
-GROUP_MODEL_NAME = "G09_model"
-model = load_production_model()
-
-# Get the current timestamp
-now = datetime.datetime.now(pytz.utc)
-
-# Calculate hours to forecast
-# hours_to_forecast = 4
-
-future = model.make_future_dataframe(periods=4, freq='H')
-fcst = model.predict(future)
-fig = model.plot(fcst)
 
 # COMMAND ----------
 
@@ -102,38 +71,84 @@ def load_production_model():
 
 def prepare_future_df(hours, df_last):
     future_df = df_last.copy()
-    future_df = future_df.drop(columns=["y"])
-    future_timestamps = [df_last["timestamp"].max() + datetime.timedelta(hours=i+1) for i in range(hours)]
-    future_df = future_df.append(pd.DataFrame({"timestamp": future_timestamps}), ignore_index=True)
+    future_timestamps = [df_last["ds"].max() + datetime.timedelta(hours=i+1) for i in range(hours)]
+    future_df = future_df.append(pd.DataFrame({"ds": future_timestamps}), ignore_index=True)
     return future_df
 
 # Load the production model
 GROUP_MODEL_NAME = "G09_model"
 model = load_production_model()
 
-# Your DataFrame with columns "timestamp", "weekday_indicator", "pop", "rain_1h", "temp"
-# Replace 'your_dataframe' with the actual DataFrame you have
-filtered_weather_data = filtered_weather_data.rename(columns={"time": "ds", "": "y"})
+
+filtered_weather_data = filtered_weather_data.rename(columns={"time": "ds"})
 
 # Prepare future dataframe
 hours_to_forecast = 4
-future_df = prepare_future_df(hours_to_forecast, your_dataframe.tail(1))
-
+future_df = prepare_future_df(hours_to_forecast, filtered_weather_data)
+future_df = future_df.dropna()
+# print(future_df)
 # Make predictions
 forecast = model.predict(future_df)
 
+display(forecast)
 # Plot results
 fig = model.plot(forecast)
+plt.show()
 
 
 
 # COMMAND ----------
 
+import datetime
+import pytz
+
+eastern_tz = pytz.timezone('US/Eastern')
+current_time_eastern = datetime.datetime.now(eastern_tz)
+formatted_datetime = current_time_eastern.strftime('%Y-%m-%d %H:%M:%S')
+
+# Filter the forecast to keep only the data from the current time and future
+forecast = forecast[forecast["ds"] > formatted_datetime]
+
+# print(formatted_datetime)
+# Print the filtered forecast
+print(forecast)
 
 
 
 # COMMAND ----------
 
+# Get the last 5 rows of the forecast DataFrame (including the current hour and the next 4 hours)
+forecast_tail = forecast.head(5)
+
+# Plot results
+fig, ax = plt.subplots(figsize=(10, 6))
+
+# Plot the line
+ax.plot(forecast_tail["ds"], forecast_tail["yhat"], marker='o', linestyle='-', label='Predicted')
+
+# Set the x-axis limits to show only the 4 hours in the future
+ax.set_xlim(forecast_tail["ds"].min(), forecast_tail["ds"].max())
+
+# Customize the plot
+ax.set_xlabel("Time")
+ax.set_ylabel("Bike Sharing Demand")
+ax.set_title("Bike Sharing Demand Forecast for the Next 4 Hours")
+ax.legend()
+
+# Show the plot
+plt.show()
+
+
+# COMMAND ----------
+
+# %pip install folium
+import folium
+
+latitude, longitude = 40.7128, -74.0060  # New York City coordinates
+map = folium.Map(location=[latitude, longitude], zoom_start=12)
+marker_latitude, marker_longitude = 40.74322681432173, -73.97449783980846 
+folium.Marker([marker_latitude, marker_longitude], popup='Example Location').add_to(map)
+display(map)
 
 
 
