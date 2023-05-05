@@ -140,17 +140,17 @@ trip_trend_df = trip_trend_df_all.filter((trip_trend_df_all.trip_direction == 'o
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Answer to Q1 and Q2 of EDA questions:
 # MAGIC Trip trends plot on daily, monthly, and weekday-based resolution. From the daily trip trend we can see that incoming and outgoing trips' counts are roughly the same. Therefore, we will only use out_trips as the indicator of trips in our station. Including in_trips is only roughly doubling the numbers in the trip trend plots, which will neither change the trend nor change the relationship between daily trip counts and other potential important variables (holidays, temperature, precipitation, etc.)
 
 # COMMAND ----------
 
-display(trip_trend_df_all)
+# MAGIC %md
+# MAGIC The daily trip trend plot certainly suggests that seasonality exists both every couple of days and every couple of months. To dive deeper, the monthly trip trend plot suggests that there are more trips during the summer time and fewer trips during the winter time, suggesting a potential correlation between trip counts and temperature. The weekday trip trend plot suggests that workdays have relatively more trips than weekends.
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Answer to Q1 and Q2 of EDA questions:
-# MAGIC The daily trip trend plot certainly suggests that seasonality exists both every couple of days and every couple of months. To dive deeper, the monthly trip trend plot suggests that there are more trips during the summer time and fewer trips during the winter time, suggesting a potential correlation between trip counts and temperature. The weekday trip trend plot suggests that workdays have relatively more trips than weekends.
+display(trip_trend_df_all)
 
 # COMMAND ----------
 
@@ -307,9 +307,9 @@ trip_trend_df.createOrReplaceTempView("trip_trend_table")
 # MAGIC SELECT *
 # MAGIC FROM trip_trend_table as t1
 # MAGIC LEFT JOIN(
-# MAGIC   SELECT date, AVG(temp) as avg_temp, AVG(feels_like) as avg_feels_like, AVG(humidity) as avg_humidity, AVG(wind_speed) as avg_wind_speed, AVG(pop) as avg_pop, AVG(snow_1h) as avg_snow
+# MAGIC   SELECT date, AVG(temp) as avg_temp, AVG(feels_like) as avg_feels_like, AVG(humidity) as avg_humidity, AVG(wind_speed) as avg_wind_speed, AVG(pop) as avg_pop, AVG(snow_1h) as avg_snow, AVG(rain_1h) as avg_rain
 # MAGIC   FROM(
-# MAGIC     SELECT concat(YEAR(FROM_UNIXTIME(dt)),'-',LPAD(MONTH(FROM_UNIXTIME(dt)), 2, '0'),'-',LPAD(DAY(FROM_UNIXTIME(dt)), 2, '0')) as date, DATE_FORMAT(FROM_UNIXTIME(dt),'HH:mm:ss') as time, `temp`, feels_like, humidity, wind_speed, pop, snow_1h
+# MAGIC     SELECT concat(YEAR(FROM_UNIXTIME(dt)),'-',LPAD(MONTH(FROM_UNIXTIME(dt)), 2, '0'),'-',LPAD(DAY(FROM_UNIXTIME(dt)), 2, '0')) as date, DATE_FORMAT(FROM_UNIXTIME(dt),'HH:mm:ss') as time, `temp`, feels_like, humidity, wind_speed, pop, snow_1h, rain_1h
 # MAGIC     FROM bronze_historic_weather_data
 # MAGIC   )
 # MAGIC   GROUP BY date
