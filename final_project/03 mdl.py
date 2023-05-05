@@ -104,7 +104,7 @@ if not production_exist:
         baseline_model.add_regressor("weekday_indicator")
         baseline_model.add_regressor("temp")
         baseline_model.add_regressor("pop")
-        baseline_model.add_regressor("snow_1h")
+        # baseline_model.add_regressor("snow_1h")
         baseline_model.fit(trip_data) # fit the model
         # cross validation
         baseline_model_cv = cross_validation(model=baseline_model, horizon="91.25 days", parallel="threads")
@@ -160,7 +160,7 @@ def objective(search_space):
     updated_model.add_regressor("weekday_indicator")
     updated_model.add_regressor("temp")
     updated_model.add_regressor("pop")
-    updated_model.add_regressor("snow_1h")
+    # updated_model.add_regressor("snow_1h")
     # updated_model.add_country_holidays(country_name='US')
     updated_model.fit(trip_data)
     # cross validation
@@ -201,7 +201,7 @@ if production_exist:
         selected_model.add_regressor("weekday_indicator")
         selected_model.add_regressor("temp")
         selected_model.add_regressor("pop")
-        selected_model.add_regressor("snow_1h")                        
+        # selected_model.add_regressor("snow_1h")                        
         # selected_model.add_country_holidays(country_name='US')
         selected_model.fit(trip_data) # fit the model
         # cross validation
