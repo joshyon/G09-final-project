@@ -83,7 +83,7 @@ model = load_production_model()
 filtered_weather_data = filtered_weather_data.rename(columns={"time": "ds"})
 
 # Prepare future dataframe
-hours_to_forecast = 4
+hours_to_forecast = 1000
 future_df = prepare_future_df(hours_to_forecast, filtered_weather_data)
 future_df = future_df.dropna()
 # print(future_df)
