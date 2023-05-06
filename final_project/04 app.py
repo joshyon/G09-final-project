@@ -60,8 +60,7 @@ bronze_station_status_oneday = spark.read.format("delta").load("dbfs:/user/hive/
 # Convert the Spark DataFrame to a Pandas DataFrame (optional)
 bronze_station_status_oneday_pd = bronze_station_status_oneday.toPandas()
 bronze_station_status_oneday_pd = bronze_station_status_oneday_pd.dropna()
-bronze_station_status_oneday_pd['last_reported'] = pd.to_datetime(bronze_station_status_oneday_pd['last_reported'])
-bronze_station_status_oneday_pd['last_reported'] = bronze_station_status_oneday_pd['last_reported'].dt.round('H')
+
 
 # Display the DataFrame
 display(bronze_station_status_oneday_pd)
@@ -115,7 +114,7 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 
 #plot residual
-actual_values = bronze_station_status_oneday_pd[['last_reported', 'Net_Change']].set_index('last_reported')
+actual_values = bronze_station_status_oneday_pd[['rounded_last_reported', 'Net_Change']].set_index('rounded_last_reported')
 predicted_values = forecast[['ds', 'yhat']].set_index('ds')
 
 # Filter the actual_values and predicted_values to include only the common dates
@@ -348,7 +347,7 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 
 #plot residual
-actual_values = bronze_station_status_oneday_pd[['last_reported', 'Net_Change']].set_index('last_reported')
+actual_values = bronze_station_status_oneday_pd[['rounded_last_reported', 'Net_Change']].set_index('rounded_last_reported')
 predicted_values = forecast[['ds', 'yhat']].set_index('ds')
 
 # Filter the actual_values and predicted_values to include only the common dates
