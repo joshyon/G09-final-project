@@ -268,7 +268,7 @@ final_query = (
     .option("mergeSchema", "true")
     .queryName("final_query")
     .outputMode("append")
-    .trigger(processingTime='1 second')
+    .trigger(availableNow=True)
     .format("delta")
     .start(output_path)
 )
