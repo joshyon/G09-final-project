@@ -1,22 +1,11 @@
 # Databricks notebook source
-# MAGIC %run ./includes/includes
+# MAGIC %md
+# MAGIC # README
+# MAGIC The following codes created the necessary plots that help answer questions of EDA part. Some markdown cells are added around the import code blocks to explain what the code does. Other markdown cells are used to answer the EDA questions based on the plots, and these markdown cells all have headings that explain which question they are answering to.
 
 # COMMAND ----------
 
-dbutils.widgets.removeAll()
-
-dbutils.widgets.text('01.start_date', "2021-10-01")
-dbutils.widgets.text('02.end_date', "2023-03-01")
-dbutils.widgets.text('03.hours_to_forecast', '4')
-dbutils.widgets.text('04.promote_model', 'No')
-
-start_date = str(dbutils.widgets.get('01.start_date'))
-end_date = str(dbutils.widgets.get('02.end_date'))
-hours_to_forecast = int(dbutils.widgets.get('03.hours_to_forecast'))
-promote_model = bool(True if str(dbutils.widgets.get('04.promote_model')).lower() == 'yes' else False)
-
-print(start_date,end_date,hours_to_forecast, promote_model)
-print("YOUR CODE HERE...")
+# MAGIC %run ./includes/includes
 
 # COMMAND ----------
 
@@ -24,13 +13,14 @@ display(dbutils.fs.ls(GROUP_DATA_PATH))
 
 # COMMAND ----------
 
-bike_data = spark.read.format("delta").load("dbfs:/FileStore/tables/G09/bronze_historic_bike_trip.delta/")
-bike_data.write.format("delta").mode("overwrite").saveAsTable("G09_db.bronze_historic_bike_trip")
+# bike_data = spark.read.format("delta").load("dbfs:/FileStore/tables/G09/bronze_historic_bike_trip.delta/")
+# # filtered_bike_data = bike_data.filter((col("start_station_name") == "E 33 St & 1 Ave") | (col("end_station_name") == "E 33 St & 1 Ave"))
+# bike_data.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable("G09_db.bronze_historic_bike_trip")
 
 # COMMAND ----------
 
-weather_data = spark.read.format("delta").load("dbfs:/FileStore/tables/G09/bronze_historic_weather.delta/")
-weather_data.write.format("delta").mode("overwrite").saveAsTable("G09_db.bronze_historic_weather_data")
+# weather_data = spark.read.format("delta").load("dbfs:/FileStore/tables/G09/bronze_historic_weather.delta/")
+# weather_data.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable("G09_db.bronze_historic_weather_data")
 
 # COMMAND ----------
 
@@ -40,8 +30,8 @@ weather_data.write.format("delta").mode("overwrite").saveAsTable("G09_db.bronze_
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC SELECT * FROM bronze_historic_bike_trip WHERE start_station_name = 'E 33 St & 1 Ave' or end_station_name = 'E 33 St & 1 Ave';
+# %sql
+# SELECT * FROM bronze_historic_bike_trip WHERE start_station_name = 'E 33 St & 1 Ave' or end_station_name = 'E 33 St & 1 Ave';
 
 # COMMAND ----------
 
@@ -75,14 +65,14 @@ trip_trend_df = spark.sql("""
 # MAGIC # Define the start and end dates as strings in the format "YYYY-MM-DD"
 # MAGIC start_date = trip_trend_df.head(1)[0]['date']
 # MAGIC end_date = trip_trend_df.tail(1)[0]['date']
-# MAGIC 
+# MAGIC
 # MAGIC # Convert the start and end dates to datetime objects
 # MAGIC start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
 # MAGIC end_date_obj = datetime.strptime(end_date, "%Y-%m-%d")
-# MAGIC 
+# MAGIC
 # MAGIC # Create a timedelta object representing one day
 # MAGIC one_day = timedelta(days=1)
-# MAGIC 
+# MAGIC
 # MAGIC # Initialize an empty list to store the datetime objects
 # MAGIC date_list = []
 # MAGIC counts = []
@@ -106,20 +96,25 @@ temp_df.createOrReplaceTempView("date_table")
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC SELECT date_table.date, concat(YEAR(date_table.date),'-',LPAD(MONTH(date_table.date), 2, '0')) as month_year, COALESCE(t2.trip_count, 0) AS trip_count, t2.trip_direction
-# MAGIC FROM date_table
-# MAGIC LEFT JOIN (
-# MAGIC   SELECT date, count(ride_id) as trip_count, t1.trip_direction
-# MAGIC   FROM(
-# MAGIC     SELECT concat(YEAR(started_at),'-',LPAD(MONTH(started_at), 2, '0'),'-',LPAD(DAY(started_at), 2, '0')) as date, ride_id, if(start_station_name = 'E 33 St & 1 Ave', 'out', 'in') as trip_direction
-# MAGIC     FROM bronze_historic_bike_trip
-# MAGIC     WHERE start_station_name = 'E 33 St & 1 Ave' or end_station_name = 'E 33 St & 1 Ave'
-# MAGIC   ) as t1
-# MAGIC   GROUP BY date, t1.trip_direction
-# MAGIC ) as t2
-# MAGIC on date_table.date = t2.date
-# MAGIC ORDER BY date_table.date
+# %sql
+# SELECT date_table.date, concat(YEAR(date_table.date),'-',LPAD(MONTH(date_table.date), 2, '0')) as month_year, COALESCE(t2.trip_count, 0) AS trip_count, t2.trip_direction
+# FROM date_table
+# LEFT JOIN (
+#   SELECT date, count(ride_id) as trip_count, t1.trip_direction
+#   FROM(
+#     SELECT concat(YEAR(started_at),'-',LPAD(MONTH(started_at), 2, '0'),'-',LPAD(DAY(started_at), 2, '0')) as date, ride_id, if(start_station_name = 'E 33 St & 1 Ave', 'out', 'in') as trip_direction
+#     FROM bronze_historic_bike_trip
+#     WHERE start_station_name = 'E 33 St & 1 Ave' or end_station_name = 'E 33 St & 1 Ave'
+#   ) as t1
+#   GROUP BY date, t1.trip_direction
+# ) as t2
+# on date_table.date = t2.date
+# ORDER BY date_table.date
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC All the cells above are only temporary commands that helped me to achieve the final sql code to grab data for visualization. In the following code has every parts I tried. It directly read the bronze data of historical bike trips, filter out trips that either arrived to or left from our station, and gets the time-related columns. The time-related columns are: date, month of the year, and the weekday. These columns will help the station to understand the trips trend in different time resolutions: is there seasonality in the trend in each month? does the seasonality persist in monthly trend? which weekdays have relatively more trips?
 
 # COMMAND ----------
 
@@ -145,7 +140,13 @@ trip_trend_df = trip_trend_df_all.filter((trip_trend_df_all.trip_direction == 'o
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC Trip trends plot on daily, monthly, and weekday-based resolution. From the daily trip trend we can see that incoming and outgoing trips' counts are roughly the same.
+# MAGIC ## Answer to Q1 and Q2 of EDA questions:
+# MAGIC Trip trends plot on daily, monthly, and weekday-based resolution. From the daily trip trend we can see that incoming and outgoing trips' counts are roughly the same. Therefore, we will only use out_trips as the indicator of trips in our station. Including in_trips is only roughly doubling the numbers in the trip trend plots, which will neither change the trend nor change the relationship between daily trip counts and other potential important variables (holidays, temperature, precipitation, etc.)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC The daily trip trend plot certainly suggests that seasonality exists both every couple of days and every couple of months. To dive deeper, the monthly trip trend plot suggests that there are more trips during the summer time and fewer trips during the winter time, suggesting a potential correlation between trip counts and temperature. The weekday trip trend plot suggests that workdays have relatively more trips than weekends.
 
 # COMMAND ----------
 
@@ -186,6 +187,11 @@ holidays_lt[10]
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC The following code matches the holidays' dates and the trip counts on the corresponding day so that we can know how the holidays affect the trip counts.
+
+# COMMAND ----------
+
 holidays_df['trip_count'] = 0
 for i in range(len(holidays_df)):
     date = holidays_df['date'].iloc[i]
@@ -194,6 +200,11 @@ for i in range(len(holidays_df)):
         holidays_df['trip_count'].iloc[i] = value
 holidays_df = holidays_df[holidays_df['trip_count']>0]
 holidays_df.head(5)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC This list of matches between colors and holidays makes sure that the holidays on the trip trend plot, when appearing twice, will have the same color.
 
 # COMMAND ----------
 
@@ -218,12 +229,22 @@ holidays_df.head(5)
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Answer to Q3 of EDA questions:
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC The daily trip trend plot bellow incorporated the holidays. The dots represent the trip counts on the specific holidays and the colors differentiate different holidays.
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC From the daily trip plot with holiday we can only confidently conclude that three holidays have major impact on the trip counts: Thanksgiving day, Christmas day, and New Year's day.
+
+# COMMAND ----------
+
 # MAGIC %python
-# MAGIC 
+# MAGIC
 # MAGIC plt.figure(dpi=200, figsize = (20,10))
 # MAGIC dates = [datetime.strptime(x, '%Y-%m-%d') for x in trip_df['date'].values]
 # MAGIC plt.plot(dates, trip_df['trip_count'])
@@ -238,10 +259,10 @@ holidays_df.head(5)
 # MAGIC # plt.axhline(y = 30, color = 'r', linestyle = '-')
 # MAGIC # plt.axvline(x = 30, color = 'r', linestyle = '-')
 # MAGIC # plt.axvline(x = 0, color = 'r', linestyle = '-')
-# MAGIC 
+# MAGIC
 # MAGIC plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
 # MAGIC plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-# MAGIC 
+# MAGIC
 # MAGIC plt.legend(legends, loc='upper right', prop={'size': 6})
 # MAGIC plt.xlabel('Date')
 # MAGIC plt.ylabel('Trip Count')
@@ -268,7 +289,17 @@ trip_trend_df.createOrReplaceTempView("trip_trend_table")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC The following plots try to display the influence of different weather aspects on the trip count of the station
+# MAGIC ## Answer to Q4 of EDA questions:
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC The following commands convert all hourly weather data to the daily averages and match them with the daily trip counts. In case there may be missing rows in weather data, only days with both trip counts and weather data will be kept.
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC The plots generated based on the table created by the following code show the influence of different weather aspects on the daily trip counts. Temperature columns definitely have a moderately strong correlation with daily trips. Pop and snow_1 plots, while a little chaotic, suggests that the daily trip counts will be smaller if there is heavy precipitation that day.
 
 # COMMAND ----------
 
@@ -276,9 +307,9 @@ trip_trend_df.createOrReplaceTempView("trip_trend_table")
 # MAGIC SELECT *
 # MAGIC FROM trip_trend_table as t1
 # MAGIC LEFT JOIN(
-# MAGIC   SELECT date, AVG(temp) as avg_temp, AVG(feels_like) as avg_feels_like, AVG(humidity) as avg_humidity, AVG(wind_speed) as avg_wind_speed, AVG(pop) as avg_pop, AVG(snow_1h) as avg_snow
+# MAGIC   SELECT date, AVG(temp) as avg_temp, AVG(feels_like) as avg_feels_like, AVG(humidity) as avg_humidity, AVG(wind_speed) as avg_wind_speed, AVG(pop) as avg_pop, AVG(snow_1h) as avg_snow, AVG(rain_1h) as avg_rain
 # MAGIC   FROM(
-# MAGIC     SELECT concat(YEAR(FROM_UNIXTIME(dt)),'-',LPAD(MONTH(FROM_UNIXTIME(dt)), 2, '0'),'-',LPAD(DAY(FROM_UNIXTIME(dt)), 2, '0')) as date, DATE_FORMAT(FROM_UNIXTIME(dt),'HH:mm:ss') as time, `temp`, feels_like, humidity, wind_speed, pop, snow_1h
+# MAGIC     SELECT concat(YEAR(FROM_UNIXTIME(dt)),'-',LPAD(MONTH(FROM_UNIXTIME(dt)), 2, '0'),'-',LPAD(DAY(FROM_UNIXTIME(dt)), 2, '0')) as date, DATE_FORMAT(FROM_UNIXTIME(dt),'HH:mm:ss') as time, `temp`, feels_like, humidity, wind_speed, pop, snow_1h, rain_1h
 # MAGIC     FROM bronze_historic_weather_data
 # MAGIC   )
 # MAGIC   GROUP BY date
@@ -310,7 +341,7 @@ weather_trip_trend_df = spark.sql(sql_command2)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC The correlation heat mat shows the correlation between different station and weather variables.
+# MAGIC The correlation heat mat shows the correlation between different station and weather variables.  Pop and snow_1 may potentially be correlated with daily trip counts and therefore can be kept. Since temperature and feels like have a nearly 1 correlation, there exist collinearity and therefore only one of them should be used in the next steps.
 
 # COMMAND ----------
 
@@ -323,7 +354,7 @@ weather_trip_trend_df = spark.sql(sql_command2)
 # MAGIC %python
 # MAGIC # Compute correlation matrix
 # MAGIC corr_matrix = weather_trip_df[['trip_count', 'avg_temp', 'avg_feels_like', 'avg_humidity', 'avg_wind_speed', 'avg_pop', 'avg_snow']].corr()
-# MAGIC 
+# MAGIC
 # MAGIC # Plot correlation heatmap
 # MAGIC sns.heatmap(corr_matrix, annot=True, cmap='coolwarm')
 # MAGIC plt.title('Correlation Heatmap')
@@ -333,7 +364,12 @@ weather_trip_trend_df = spark.sql(sql_command2)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC The percipitation probability and snow value may not only be use as a numerical variable. The amount may not be that important. Having percipitation or snow and having a sunny or windy day may already be influential to the station's operation.
+# MAGIC ## Extra answer to Q4 of EDA questions:
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC The percipitation probability and snow value may not only be use as a numerical variable. The amount may not be that important. Having percipitation or snow and having a sunny day may already be influential to the station's operation.
 
 # COMMAND ----------
 
