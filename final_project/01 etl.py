@@ -178,6 +178,7 @@ devices_query = (
                  .format("delta")
                  .queryName("write_silver_indicator_df")
                  .trigger(availableNow=True)
+                 .option("mergeSchema", "true")
                  .option("checkpointLocation", checkpoint_path)
                  .start(output_path)
                 )
@@ -220,6 +221,7 @@ silver_query = (
                  .format("delta")
                  .queryName("silver_query")
                  .trigger(availableNow=True)
+                 .option("mergeSchema", "true")
                  .option("checkpointLocation", checkpoint_path)
                  .start(output_path)
                 )
@@ -248,7 +250,7 @@ hourly_silver_data = (
 weather_join_data = (
     weather_data
     .withColumn('date_timestamp', from_unixtime('dt'))
-    .select("date_timestamp", "temp", "snow_1h", "pop")
+    .select("date_timestamp", "temp", "snow_1h", "pop", "rain_1h")
 )
 
 silver_hourly_trip = (
@@ -262,18 +264,86 @@ output_path = f"{GROUP_DATA_PATH}/silver_hourly_trip_info.delta"
 final_query = (
     silver_hourly_trip
     .writeStream
-    .format("delta")
-    .trigger(availableNow=True)
+    .option("checkpointLocation", checkpoint_path)
+    .option("mergeSchema", "true")
     .queryName("final_query")
     .outputMode("append")
-    .option("checkpointLocation", checkpoint_path)
+    .trigger(processingTime='1 second')
+    .format("delta")
     .start(output_path)
 )
 
+
 # COMMAND ----------
 
-silver_hourly_trip_table = spark.read.format('delta').load(f"{GROUP_DATA_PATH}/silver_hourly_trip_info.delta")
-silver_hourly_trip_table.show()
+#%sql
+#DESCRIBE HISTORY 'dbfs:/FileStore/tables/G09/silver_hourly_trip_info.delta'
+
+# COMMAND ----------
+
+#silver_hourly_trip_table = spark.read.format('delta').load(f"{GROUP_DATA_PATH}/silver_hourly_trip_info.delta")
+
+# COMMAND ----------
+
+from pyspark.sql.functions import * 
+bronze_rt_station_df = spark.read.format('delta').load(BRONZE_STATION_STATUS_PATH)
+bronze_rt_station_df = bronze_rt_station_df.withColumn("last_reported", to_timestamp("last_reported"))
+
+# COMMAND ----------
+
+bronze_rt_station_df = bronze_rt_station_df.filter(col('station_id') == "61c82689-3f4c-495d-8f44-e71de8f04088")
+
+# COMMAND ----------
+
+bronze_station_condensed = bronze_rt_station_df["last_reported", "num_bikes_available"]
+
+# COMMAND ----------
+
+bronze_station_condensed = bronze_station_condensed.withColumn("groupby_dt", date_format("last_reported",'yyyy-MM-dd HH'))
+#bronze_station_condensed.orderBy('last_reported').show(10)
+
+
+# COMMAND ----------
+
+bronze_station_status_oneday = bronze_station_condensed.select('*').where((col('last_reported') >= '2023-04-29') & (col('last_reported') < '2023-04-30'))
+
+# COMMAND ----------
+
+bronze_station_status_oneday.sort('last_reported').show(48)
+
+# COMMAND ----------
+
+bronze_station_status_oneday = bronze_station_status_oneday.sort('last_reported')
+
+# COMMAND ----------
+
+bronze_station_status_oneday = bronze_station_status_oneday.toPandas()
+
+# COMMAND ----------
+
+import pandas as pd
+bronze_station_status_oneday['previous_num_bike_available'] = bronze_station_status_oneday['num_bikes_available'].shift(2)
+bronze_station_status_oneday['Net_Change'] = bronze_station_status_oneday['num_bikes_available']-bronze_station_status_oneday['previous_num_bike_available']
+bronze_station_status_oneday_pandas = bronze_station_status_oneday.groupby(['groupby_dt']).first()
+
+# COMMAND ----------
+
+bronze_station_status_oneday_df=spark.createDataFrame(bronze_station_status_oneday_pandas) 
+
+# COMMAND ----------
+
+bronze_station_status_oneday_df.write.saveAsTable("bronze_station_status_oneday")
+
+# COMMAND ----------
+
+#from pyspark.sql.functions import *
+#bronze_station_info_df.filter(col('name') == GROUP_STATION_ASSIGNMENT).display()
+
+# COMMAND ----------
+
+#bronze_weather = spark.read.format('delta').load(f"{GROUP_DATA_PATH}/bronze_historic_weather.delta")
+#bronze_weather.filter(col("rain_1h") > 0).show(10)
+
 
 # COMMAND ----------
 
