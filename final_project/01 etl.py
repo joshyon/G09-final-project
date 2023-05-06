@@ -289,7 +289,7 @@ final_query = (
     .option("mergeSchema", "true")
     .queryName("final_query")
     .outputMode("append")
-    .trigger(processingTime='1 second')
+    .trigger(availableNow=True)
     .format("delta")
     .start(output_path)
 )
@@ -340,3 +340,7 @@ import json
 
 # Return Success
 dbutils.notebook.exit(json.dumps({"exit_code": "OK"}))
+
+# COMMAND ----------
+
+
