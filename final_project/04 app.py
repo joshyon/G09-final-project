@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 from prophet import Prophet
 from prophet.serialize import model_from_json
 
+hours_to_forecast = int(dbutils.widgets.get('03.hours_to_forecast'))
+
 # Read bronze streaming delta table
 trip_data = spark.read.format("delta").load("dbfs:/FileStore/tables/bronze_station_status.delta").toPandas()
 station_info = spark.read.format("delta").load("dbfs:/FileStore/tables/bronze_station_info.delta").toPandas()
@@ -55,126 +57,53 @@ display(filtered_weather_data)
 
 # COMMAND ----------
 
-import datetime
-import pytz
-import pandas as pd
-import mlflow
-import mlflow.prophet
-from prophet import Prophet
-
-# Load the production model using MLflow
-def load_production_model():
-    client = mlflow.tracking.MlflowClient()
-    production_model_version = client.get_latest_versions(GROUP_MODEL_NAME, stages=["Production"])[0]
-    model_uri = f"models:/{GROUP_MODEL_NAME}/{production_model_version.version}"
-    return mlflow.prophet.load_model(model_uri)
-
-def prepare_future_df(hours, df_last):
-    future_df = df_last.copy()
-    future_timestamps = [df_last["ds"].max() + datetime.timedelta(hours=i+1) for i in range(hours)]
-    future_df = future_df.append(pd.DataFrame({"ds": future_timestamps}), ignore_index=True)
-    return future_df
-
-# Load the production model
-GROUP_MODEL_NAME = "G09_model"
-model = load_production_model()
 
 
-filtered_weather_data = filtered_weather_data.rename(columns={"time": "ds"})
+# COMMAND ----------
 
-# Prepare future dataframe
-hours_to_forecast = 1000
-future_df = prepare_future_df(hours_to_forecast, filtered_weather_data)
-future_df = future_df.dropna()
-print(future_df)
-# Make predictions
-forecast = model.predict(future_df)
+# Load streaming historical data (net change)
 
-display(forecast)
-# Plot results
-fig = model.plot(forecast)
-plt.show()
+bronze_station_status_oneday = spark.read.format("delta").load("dbfs:/user/hive/warehouse/g09_db.db/bronze_station_status_oneday")
+
+# Convert the Spark DataFrame to a Pandas DataFrame (optional)
+bronze_station_status_oneday_pd = bronze_station_status_oneday.toPandas()
+bronze_station_status_oneday_pd = bronze_station_status_oneday_pd.dropna()
+bronze_station_status_oneday_pd['last_reported'] = pd.to_datetime(bronze_station_status_oneday_pd['last_reported'])
+bronze_station_status_oneday_pd['last_reported'] = bronze_station_status_oneday_pd['last_reported'].dt.round('H')
+
+# Display the DataFrame
+display(bronze_station_status_oneday_pd)
+
+# COMMAND ----------
 
 
 
 # COMMAND ----------
 
-import datetime
-import pytz
 
-eastern_tz = pytz.timezone('US/Eastern')
-current_time_eastern = datetime.datetime.now(eastern_tz)
-formatted_datetime = current_time_eastern.strftime('%Y-%m-%d %H:%M:%S')
 
-# Filter the forecast to keep only the data from the current time and future
-forecast = forecast[forecast["ds"] > formatted_datetime]
+# COMMAND ----------
 
-# print(formatted_datetime)
-# Print the filtered forecast
-print(forecast)
+
 
 
 
 # COMMAND ----------
 
-# Get the last 5 rows of the forecast DataFrame (including the current hour and the next 4 hours)
-forecast_tail = forecast.head(5)
-
-# Plot results
-fig, ax = plt.subplots(figsize=(10, 6))
-
-# Plot the line
-ax.plot(forecast_tail["ds"], forecast_tail["yhat"], marker='o', linestyle='-', label='Predicted')
-
-# Set the x-axis limits to show only the 4 hours in the future
-ax.set_xlim(forecast_tail["ds"].min(), forecast_tail["ds"].max())
-
-# Customize the plot
-ax.set_xlabel("Time")
-ax.set_ylabel("Bike Sharing Demand")
-ax.set_title("Bike Sharing Demand Forecast for the Next 4 Hours")
-ax.legend()
-
-# Show the plot
-plt.show()
 
 
 # COMMAND ----------
 
-import matplotlib.pyplot as plt
 
-# Assuming 'filtered_weather_data' is the DataFrame containing the actual values
-# and 'forecast' is the DataFrame containing the predicted values
-actual_values = filtered_weather_data.set_index('ds')['temp']
-predicted_values = forecast.set_index('ds')['yhat']
-
-# Calculate residuals
-residuals = actual_values - predicted_values
-
-# Create residual plot
-plt.figure(figsize=(10, 6))
-plt.scatter(predicted_values, residuals, alpha=0.5)
-plt.axhline(y=0, color='r', linestyle='--', alpha=0.7)
-plt.xlabel('Predicted Values')
-plt.ylabel('Residuals')
-plt.title('Residual Plot')
-
-plt.show()
 
 
 # COMMAND ----------
 
-# MAGIC %pip install folium
+
 
 # COMMAND ----------
 
-import folium
 
-latitude, longitude = 40.7128, -74.0060  # New York City coordinates
-map = folium.Map(location=[latitude, longitude], zoom_start=12)
-marker_latitude, marker_longitude = 40.74322681432173, -73.97449783980846 
-folium.Marker([marker_latitude, marker_longitude], popup='Example Location').add_to(map)
-display(map)
 
 
 # COMMAND ----------
@@ -214,7 +143,7 @@ filtered_weather_data = filtered_weather_data.rename(columns={"time": "ds"})
 hours_to_forecast = 1000
 future_df = prepare_future_df(hours_to_forecast, filtered_weather_data)
 future_df = future_df.dropna()
-print(future_df)
+# print(future_df)
 # Make predictions
 forecast = model.predict(future_df)
 
@@ -222,6 +151,61 @@ display(forecast)
 # Plot results
 fig = model.plot(forecast)
 plt.show()
+
+# COMMAND ----------
+
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.linear_model import LinearRegression
+
+#plot residual
+actual_values = bronze_station_status_oneday_pd[['last_reported', 'Net_Change']].set_index('last_reported')
+predicted_values = forecast[['ds', 'yhat']].set_index('ds')
+
+# Filter the actual_values and predicted_values to include only the common dates
+common_dates = actual_values.index.intersection(predicted_values.index)
+actual_values = actual_values.loc[common_dates]
+predicted_values = predicted_values.loc[common_dates]
+
+# Calculate residuals
+residuals = actual_values['Net_Change'] - predicted_values['yhat']
+
+# Create residual plot
+plt.figure(figsize=(10, 6))
+plt.scatter(predicted_values, residuals, alpha=0.5)
+
+# Fit a linear regression model to the residuals
+lr = LinearRegression()
+lr.fit(predicted_values.values.reshape(-1, 1), residuals.values.reshape(-1, 1))
+predicted_residuals = lr.predict(predicted_values.values.reshape(-1, 1))
+
+# Add a line representing the trend of the residuals
+plt.plot(predicted_values, predicted_residuals, color='r', linestyle='--', alpha=0.7, label='Trend Line')
+
+plt.xlabel('Predicted Values')
+plt.ylabel('Residuals')
+plt.title('Residual Plot')
+plt.legend()
+
+plt.show()
+
+
+# COMMAND ----------
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+residuals = actual_values['Net_Change'] - predicted_values['yhat']
+# Create violin plot
+plt.figure(figsize=(10, 6))
+sns.violinplot(x=residuals)
+plt.xlabel('Residuals')
+plt.title('Residuals Distribution')
+
+plt.show()
+
+
+
 
 # COMMAND ----------
 
@@ -237,66 +221,76 @@ forecast = forecast[forecast["ds"] > formatted_datetime]
 
 # print(formatted_datetime)
 # Print the filtered forecast
-print(forecast)
+# print(forecast)
 
 # COMMAND ----------
 
 # Get the last 5 rows of the forecast DataFrame (including the current hour and the next 4 hours)
 forecast_tail = forecast.head(5)
 
-# Plot results
+# COMMAND ----------
+
+import pandas as pd
+
+# Sort filtered_trip_data by 'last_reported' column
+filtered_trip_data_sorted = filtered_trip_data.sort_values(by='last_reported')
+
+# Merge filtered_trip_data_sorted with forecast_tail to find the closest match
+merged_data = pd.merge_asof(
+    forecast_tail, 
+    filtered_trip_data_sorted[['last_reported', 'num_docks_available']], 
+    left_on='ds', 
+    right_on='last_reported', 
+    direction='nearest'
+)
+
+# Subtract the net bike change from the num_docks_available value
+merged_data["adjusted_demand"] = merged_data["num_docks_available"] - merged_data["yhat"]
+
+# Plot the results
 fig, ax = plt.subplots(figsize=(10, 6))
 
 # Plot the line
-ax.plot(forecast_tail["ds"], forecast_tail["yhat"], marker='o', linestyle='-', label='Predicted')
+ax.plot(merged_data["ds"], merged_data["adjusted_demand"], marker='o', linestyle='-', label='Adjusted Prediction')
 
 # Set the x-axis limits to show only the 4 hours in the future
-ax.set_xlim(forecast_tail["ds"].min(), forecast_tail["ds"].max())
+ax.set_xlim(merged_data["ds"].min(), merged_data["ds"].max())
 
 # Customize the plot
 ax.set_xlabel("Time")
-ax.set_ylabel("Bike Sharing Demand")
-ax.set_title("Bike Sharing Demand Forecast for the Next 4 Hours")
+ax.set_ylabel("Bikes Available")
+ax.set_title("Station Forecast")
 ax.legend()
+
+# Add a horizontal line at y=83 and label it
+station_capacity = 83
+ax.axhline(y=station_capacity, color='r', linestyle='--', alpha=0.7, label='Station Capacity Line')
 
 # Show the plot
 plt.show()
 
-# COMMAND ----------
 
-history_data = spark.read.format("delta").load("dbfs:/FileStore/tables/G09/silver_hourly_trip_info.delta/").toPandas()
-history_data = history_data.rename(columns={"date_timestamp": "ds", "bikes_net_change": "y"}) # rename columns to be automatically identified by Prophet model
-history_data = history_data.sort_values(["ds"])
-display(history_data)
 
 # COMMAND ----------
 
-import matplotlib.pyplot as plt
+# MAGIC %pip install folium
 
-# Assuming 'history_data' is the DataFrame containing the actual values
-# and 'forecast' is the DataFrame containing the predicted values
-actual_values = history_data[['ds', 'y']].set_index('ds')
-predicted_values = forecast[['ds', 'yhat']].set_index('ds')
+# COMMAND ----------
 
-# Filter the actual_values and predicted_values to include only the common dates
-common_dates = actual_values.index.intersection(predicted_values.index)
-actual_values = actual_values.loc[common_dates]
-predicted_values = predicted_values.loc[common_dates]
+import folium
 
-print(actual_values)
-print(predicted_values)
+latitude, longitude = 40.7128, -74.0060  # New York City coordinates
+map = folium.Map(location=[latitude, longitude], zoom_start=12)
+marker_latitude, marker_longitude = 40.74322681432173, -73.97449783980846 
+folium.Marker([marker_latitude, marker_longitude], popup='Example Location').add_to(map)
+display(map)
 
-# Calculate residuals
-residuals = actual_values['y'] - predicted_values['yhat']
-print(residuals)
 
-# Create residual plot
-plt.figure(figsize=(10, 6))
-plt.scatter(predicted_values, residuals, alpha=0.5)
-plt.axhline(y=0, color='r', linestyle='--', alpha=0.7)
-plt.xlabel('Predicted Values')
-plt.ylabel('Residuals')
-plt.title('Residual Plot')
+# COMMAND ----------
 
-plt.show()
+
+
+
+# COMMAND ----------
+
 
