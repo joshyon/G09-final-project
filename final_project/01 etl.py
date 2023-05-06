@@ -332,7 +332,7 @@ bronze_station_status_oneday_df=spark.createDataFrame(bronze_station_status_oned
 
 # COMMAND ----------
 
-bronze_station_status_oneday_df.write.saveAsTable("bronze_station_status_oneday")
+bronze_station_status_oneday_df.write.mode("overwrite").saveAsTable("bronze_station_status_oneday")
 
 # COMMAND ----------
 
@@ -351,3 +351,7 @@ import json
 
 # Return Success
 dbutils.notebook.exit(json.dumps({"exit_code": "OK"}))
+
+# COMMAND ----------
+
+
