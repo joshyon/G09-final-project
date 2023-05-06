@@ -307,7 +307,8 @@ bronze_rt_station_df = spark.read.format('delta').load(BRONZE_STATION_STATUS_PAT
 bronze_rt_station_df = bronze_rt_station_df.withColumn("last_reported", to_timestamp("last_reported"))
 bronze_rt_station_df = bronze_rt_station_df.filter(col('station_id') == "61c82689-3f4c-495d-8f44-e71de8f04088")
 bronze_station_condensed = bronze_rt_station_df["last_reported", "num_bikes_available"]
-bronze_station_condensed = bronze_station_condensed.withColumn("groupby_dt", date_format("last_reported",'yyyy-MM-dd HH'))
+bronze_station_condensed = bronze_station_condensed.withColumn('rounded_last_reported', (round(unix_timestamp("last_reported")/1800)*1800).cast("timestamp"))
+bronze_station_condensed = bronze_station_condensed.withColumn("groupby_dt", date_format("rounded_last_reported",'yyyy-MM-dd HH'))
 bronze_station_status_oneday = bronze_station_condensed.select('*').where((col('last_reported') >= '2023-04-10') & (col('last_reported') < '2023-05-05'))
 bronze_station_status_oneday = bronze_station_status_oneday.sort('last_reported')
 
@@ -326,7 +327,7 @@ bronze_station_status_oneday['previous_num_bike_available'] = bronze_station_sta
 bronze_station_status_oneday['Net_Change'] = bronze_station_status_oneday['num_bikes_available']-bronze_station_status_oneday['previous_num_bike_available']
 bronze_station_status_oneday_pandas = bronze_station_status_oneday.groupby(['groupby_dt']).first()
 bronze_station_status_oneday_df=spark.createDataFrame(bronze_station_status_oneday_pandas) 
-bronze_station_status_oneday_df.write.mode("overwrite").saveAsTable("bronze_station_status_oneday")
+bronze_station_status_oneday_df.write.mode("overwrite").option("mergeSchema", "true").saveAsTable("bronze_station_status_oneday")
 
 # COMMAND ----------
 
