@@ -23,9 +23,7 @@ weather_data = spark.read.format("delta").load("dbfs:/FileStore/tables/bronze_ny
 
 # COMMAND ----------
 
-# display(trip_data)
-# display(station_info)
-# display(weather_data)
+
 
 # COMMAND ----------
 
@@ -45,10 +43,10 @@ weather_data['weekday_indicator'] = weather_data['time'].apply(is_weekday)
 filtered_weather_data = weather_data[['weekday_indicator', 'temp', 'pop', 'time']]
 
 
-display(filtered_trip_data)
-display(filtered_station_info)
-display(weather_data)
-display(filtered_weather_data)
+# display(filtered_trip_data)
+# display(filtered_station_info)
+# display(weather_data)
+# display(filtered_weather_data)
 
 
 # COMMAND ----------
@@ -206,7 +204,11 @@ print(f"Current Staging Model: {staging_model_version.name}, Version: {staging_m
 
 # COMMAND ----------
 
-# MAGIC %pip install folium
+# MAGIC %md #Run the pip instal folium command if folium is not installed. (Simply Uncomment the next cell)
+
+# COMMAND ----------
+
+# %pip install folium
 
 # COMMAND ----------
 
