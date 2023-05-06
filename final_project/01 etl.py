@@ -46,7 +46,7 @@ historic_bike_df = (spark.readStream
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC This cell defines the writeStream for the historic bike trip data, creating a bronze delta table in the GROUP_DATA_PATH for the historic bike trip data.
+# MAGIC This cell defines the writeStream for the historic bike trip data, creating a bronze delta table in the GROUP_DATA_PATH for the historic bike trip data. We are allowing for schema evolution and paritioning by "start_station_name" column to allow for faster filtering for our station in later queries. 
 
 # COMMAND ----------
 
@@ -65,10 +65,20 @@ historic_bike_df = (spark.readStream
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC This cell uses the bronze historic bike trip delta table saved in our group data path to create a managed table in our database.
+
+# COMMAND ----------
+
 #saves bronze historic bike trip data as a managed table in our group database.
 
 historic_bike_data_table = spark.read.format("delta").load(f"{GROUP_DATA_PATH}/bronze_historic_bike_trip.delta")
 historic_bike_data_table.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable("G09_db.bronze_historic_bike_trip")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC This cell optimizes the bronze historic bike trip delta table using the "started_at" column because it has high cardinality and is queried for the creating the silver table
 
 # COMMAND ----------
 
@@ -113,7 +123,7 @@ historic_weather_df = (spark.readStream
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC This cell defines the writeStream for the historic weather data, creating a bronze delta table in the GROUP_DATA_PATH for the historic weather data.
+# MAGIC This cell defines the writeStream for the historic weather data, creating a bronze delta table in the GROUP_DATA_PATH for the historic weather data. It allows for schema evolution and paritions data by "main" column, which contains about clearness of the skies.
 
 # COMMAND ----------
 
@@ -132,10 +142,20 @@ historic_weather_df = (spark.readStream
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC This cell uses the delta table saved in our group data path to create a managed table in our database.
+
+# COMMAND ----------
+
 #saves bronze historic weather data as a managed table in our group database.
 
 historic_weather_table = spark.read.format("delta").load(f"{GROUP_DATA_PATH}/bronze_historic_weather.delta")
 historic_weather_table.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable("G09_db.bronze_historic_weather_data")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC This cell optimizes the bronze historic weather delta table using the "dt" column because it has high cardinality and is queried for the creating the silver table
 
 # COMMAND ----------
 
@@ -145,7 +165,8 @@ historic_weather_table.write.format("delta").mode("overwrite").option("overwrite
 
 # COMMAND ----------
 
-# MAGIC %fs ls /FileStore/tables/G09
+# MAGIC %md
+# MAGIC The following 3 cells performs transformations on data from the bronze historic bike trip delta table and joins with the relevant columns from the bronze historic weather data to create a silver feature table to be used for modeling in the ML notebook. We are allowing for schema evolution and didn't feel it was necessary to partition since all of the data would be used for modeling. 
 
 # COMMAND ----------
 
@@ -276,44 +297,24 @@ final_query = (
 
 # COMMAND ----------
 
-#%sql
-#DESCRIBE HISTORY 'dbfs:/FileStore/tables/G09/silver_hourly_trip_info.delta'
-
-# COMMAND ----------
-
-#silver_hourly_trip_table = spark.read.format('delta').load(f"{GROUP_DATA_PATH}/silver_hourly_trip_info.delta")
+# MAGIC %md
+# MAGIC The following 4 cells transforms the streaming bronze streaming station info table to derive a "Net Change" column which is saved into a table in our database to be used in the application notebook
 
 # COMMAND ----------
 
 from pyspark.sql.functions import * 
 bronze_rt_station_df = spark.read.format('delta').load(BRONZE_STATION_STATUS_PATH)
 bronze_rt_station_df = bronze_rt_station_df.withColumn("last_reported", to_timestamp("last_reported"))
-
-# COMMAND ----------
-
 bronze_rt_station_df = bronze_rt_station_df.filter(col('station_id') == "61c82689-3f4c-495d-8f44-e71de8f04088")
-
-# COMMAND ----------
-
 bronze_station_condensed = bronze_rt_station_df["last_reported", "num_bikes_available"]
-
-# COMMAND ----------
-
-bronze_station_condensed = bronze_station_condensed.withColumn("groupby_dt", date_format("last_reported",'yyyy-MM-dd HH'))
-#bronze_station_condensed.orderBy('last_reported').show(10)
-
-
-# COMMAND ----------
-
-bronze_station_status_oneday = bronze_station_condensed.select('*').where((col('last_reported') >= '2023-04-29') & (col('last_reported') < '2023-04-30'))
-
-# COMMAND ----------
-
-bronze_station_status_oneday.sort('last_reported').show(48)
-
-# COMMAND ----------
-
+bronze_station_condensed = bronze_station_condensed.withColumn('rounded_last_reported', (round(unix_timestamp("last_reported")/1800)*1800).cast("timestamp"))
+bronze_station_condensed = bronze_station_condensed.withColumn("groupby_dt", date_format("rounded_last_reported",'yyyy-MM-dd HH'))
+bronze_station_status_oneday = bronze_station_condensed.select('*').where((col('last_reported') >= '2023-04-10') & (col('last_reported') < '2023-05-05'))
 bronze_station_status_oneday = bronze_station_status_oneday.sort('last_reported')
+
+# COMMAND ----------
+
+bronze_station_status_oneday.show(48)
 
 # COMMAND ----------
 
@@ -325,25 +326,13 @@ import pandas as pd
 bronze_station_status_oneday['previous_num_bike_available'] = bronze_station_status_oneday['num_bikes_available'].shift(2)
 bronze_station_status_oneday['Net_Change'] = bronze_station_status_oneday['num_bikes_available']-bronze_station_status_oneday['previous_num_bike_available']
 bronze_station_status_oneday_pandas = bronze_station_status_oneday.groupby(['groupby_dt']).first()
-
-# COMMAND ----------
-
 bronze_station_status_oneday_df=spark.createDataFrame(bronze_station_status_oneday_pandas) 
+bronze_station_status_oneday_df.write.mode("overwrite").option("mergeSchema", "true").saveAsTable("bronze_station_status_oneday")
 
 # COMMAND ----------
 
-bronze_station_status_oneday_df.write.mode("overwrite").saveAsTable("bronze_station_status_oneday")
-
-# COMMAND ----------
-
-#from pyspark.sql.functions import *
-#bronze_station_info_df.filter(col('name') == GROUP_STATION_ASSIGNMENT).display()
-
-# COMMAND ----------
-
-#bronze_weather = spark.read.format('delta').load(f"{GROUP_DATA_PATH}/bronze_historic_weather.delta")
-#bronze_weather.filter(col("rain_1h") > 0).show(10)
-
+# MAGIC %md
+# MAGIC The gold table contains the following information:
 
 # COMMAND ----------
 
