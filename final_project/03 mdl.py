@@ -3,12 +3,12 @@
 
 # COMMAND ----------
 
-dbutils.widgets.removeAll()
+# dbutils.widgets.removeAll()
 
-dbutils.widgets.text('01.start_date', "2021-10-01")
-dbutils.widgets.text('02.end_date', "2023-03-01")
-dbutils.widgets.text('03.hours_to_forecast', '4')
-dbutils.widgets.text('04.promote_model', 'No')
+# dbutils.widgets.text('01.start_date', "2021-10-01")
+# dbutils.widgets.text('02.end_date', "2023-03-01")
+# dbutils.widgets.text('03.hours_to_forecast', '4')
+# dbutils.widgets.text('04.promote_model', 'No')
 
 start_date = str(dbutils.widgets.get('01.start_date'))
 end_date = str(dbutils.widgets.get('02.end_date'))
