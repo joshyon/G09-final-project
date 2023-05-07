@@ -23,6 +23,9 @@ weather_data = spark.read.format("delta").load("dbfs:/FileStore/tables/bronze_ny
 
 # COMMAND ----------
 
+dbutils.widgets.text('04.promote_model', 'No')
+
+promote_model = str(dbutils.widgets.get('04.promote_model'))
 
 
 # COMMAND ----------
@@ -145,6 +148,13 @@ plt.show()
 
 # COMMAND ----------
 
+#create gold table of actual values
+gold_actual_values = actual_values.reset_index()
+gold_actual_values_df = spark.createDataFrame(gold_actual_values)
+gold_actual_values_df.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(f"{GROUP_DATA_PATH}/gold_actual_values.delta")
+
+# COMMAND ----------
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -208,7 +218,7 @@ print(f"Current Staging Model: {staging_model_version.name}, Version: {staging_m
 
 # COMMAND ----------
 
-# %pip install folium
+# MAGIC %pip install folium
 
 # COMMAND ----------
 
@@ -400,26 +410,35 @@ plt.show()
 
 # COMMAND ----------
 
-# import mlflow
-# from mlflow.tracking import MlflowClient
+promote_model = str(dbutils.widgets.get('04.promote_model'))
 
-# mlflow_client = MlflowClient()
+if promote_model == "Yes" or promote_model == "yes":
+    import mlflow
+    from mlflow.tracking import MlflowClient
+
+    mlflow_client = MlflowClient()
 
 
-# # Specify the model name
-# GROUP_MODEL_NAME = "G09_model"
+#Specify the model name
+    GROUP_MODEL_NAME = "G09_model"
 
-# # Fetch the latest staging model version
-# staging_model_version = mlflow_client.get_latest_versions(GROUP_MODEL_NAME, stages=["Staging"])[0]
+# Fetch the latest staging model version
+    staging_model_version = mlflow_client.get_latest_versions(GROUP_MODEL_NAME, stages=["Staging"])[0]
 
-# # Register the staging model version as the new production model version
-# mlflow_client.transition_model_version_stage(
-#     name=GROUP_MODEL_NAME,
-#     version=staging_model_version.version,
-#     stage="Production"
-# )
+    mlflow_client.transition_model_version_stage(
+        name=GROUP_MODEL_NAME,
+        version=production_model_version.version,
+        stage="Archived"
+    )
 
-# print(f"Staging model version {staging_model_version.version} has been promoted to production.")
+# Register the staging model version as the new production model version
+    mlflow_client.transition_model_version_stage(
+        name=GROUP_MODEL_NAME,
+        version=staging_model_version.version,
+        stage="Production"
+    )
+
+    print(f"Staging model version {staging_model_version.version} has been promoted to production.")
 
 # COMMAND ----------
 
