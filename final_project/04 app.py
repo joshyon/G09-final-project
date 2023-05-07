@@ -1,4 +1,12 @@
 # Databricks notebook source
+# MAGIC %md #Run the pip install folium command if folium is not installed.
+
+# COMMAND ----------
+
+# MAGIC %pip install folium
+
+# COMMAND ----------
+
 # MAGIC %run ./includes/includes
 
 # COMMAND ----------
@@ -20,6 +28,10 @@ from prophet.serialize import model_from_json
 trip_data = spark.read.format("delta").load("dbfs:/FileStore/tables/bronze_station_status.delta").toPandas()
 station_info = spark.read.format("delta").load("dbfs:/FileStore/tables/bronze_station_info.delta").toPandas()
 weather_data = spark.read.format("delta").load("dbfs:/FileStore/tables/bronze_nyc_weather.delta").toPandas()
+
+# COMMAND ----------
+
+
 
 # COMMAND ----------
 
@@ -148,8 +160,12 @@ plt.show()
 
 # COMMAND ----------
 
-#create gold table of actual values
-gold_actual_values = actual_values.reset_index()
+#create gold table of actual values and model regressors
+
+all_future_df = future_df.set_index('ds')
+gold_future_df = all_future_df.loc[common_dates]
+gold_future_df["actual_net_chage"] = actual_values["Net_Change"]
+gold_actual_values = gold_future_df.reset_index()
 gold_actual_values_df = spark.createDataFrame(gold_actual_values)
 gold_actual_values_df.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(f"{GROUP_DATA_PATH}/gold_actual_values.delta")
 
@@ -214,14 +230,6 @@ print(f"Current Staging Model: {staging_model_version.name}, Version: {staging_m
 
 # COMMAND ----------
 
-# MAGIC %md #Run the pip instal folium command if folium is not installed. (Simply Uncomment the next cell)
-
-# COMMAND ----------
-
-# MAGIC %pip install folium
-
-# COMMAND ----------
-
 # MAGIC %md #Display Station Name and Map Location (Click on the Marker to See Station Name)
 
 # COMMAND ----------
@@ -242,8 +250,9 @@ display(map)
 
 import pandas as pd
 
-current_weather = weather_data[weather_data["time"] > formatted_datetime]
-display(current_weather.head(1))
+current_weather = weather_data[weather_data["time"] <= formatted_datetime]
+sorted_current_weather = current_weather.sort_values('time')
+display(sorted_current_weather.tail(1))
 
 # COMMAND ----------
 
@@ -406,7 +415,6 @@ plt.show()
 # COMMAND ----------
 
 # MAGIC %md #Register Current Staging Model as Production Model
-# MAGIC ## Apparently, the Staging Model Have a Much Better Performance Than the Production Model. We will Register the Staging Model as the New Production Model.
 
 # COMMAND ----------
 
