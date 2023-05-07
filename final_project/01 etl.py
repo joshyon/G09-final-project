@@ -332,7 +332,12 @@ bronze_station_status_oneday_df.write.mode("overwrite").option("mergeSchema", "t
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC The gold table contains the following information:
+# MAGIC The gold table that is created in the application notebook contains the following information:
+# MAGIC "ds" (type:timestamp),
+# MAGIC "weekday_indicator" (type:boolean),
+# MAGIC "temp" (type:double),
+# MAGIC "pop" (type:double),
+# MAGIC "actual_net_change" (type:double)
 
 # COMMAND ----------
 
